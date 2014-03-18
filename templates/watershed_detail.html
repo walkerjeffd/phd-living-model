@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Watershed List</title>
+</head>
+<body>
+    {% if watershed %}
+    <h1>{{ watershed.name }}</h1>
+    <ul>
+        <li>USGS: <a href="{{ url_for('usgs_dataset_detail', id=watershed.usgs.id) }}">{{ watershed.usgs.station_id }}</a></li>
+        <li>GHCND: <a href="{{ url_for('ghcnd_dataset_detail', id=watershed.ghcnd.id) }}">{{ watershed.ghcnd.station_id }}</a></li>
+    </ul>
+    {% else %}
+    <h1>Not found</h1>
+    {% endif %}
+</body>
+</html>

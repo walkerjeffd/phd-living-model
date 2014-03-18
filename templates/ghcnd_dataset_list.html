@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GHCND Datasets</title>
+</head>
+<body>
+    <h1>List of GHCND Datasets</h1>
+    <ul>
+    {% for dataset in datasets %}
+        <li><a href="{{ url_for('ghcnd_dataset_detail', id=dataset.id) }}">{{ dataset.station_id }}</a></li>    
+    {% endfor %}
+    </ul>
+</body>
+</html>

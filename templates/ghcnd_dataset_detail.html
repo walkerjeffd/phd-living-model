@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GHCND Dataset</title>
+</head>
+<body>
+    {% if dataset %}
+    <h1>GHCND: {{ dataset.station_id }}</h1>
+        {% if dataset.watersheds %}
+        <ul>
+            {% for watershed in dataset.watersheds %}
+            <li><a href="{{ url_for('watershed_detail', id=watershed.id) }}">{{ watershed.name }}</a></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    {% else %}
+    <h1>Not found</h1>
+    {% endif %}
+</body>
+</html>

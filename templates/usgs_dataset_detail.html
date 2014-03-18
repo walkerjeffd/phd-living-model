@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>USGS Dataset</title>
+</head>
+<body>
+{% if dataset %}
+    <h1>USGS: {{ dataset.station_id }}</h1>
+    <ul>
+        <li><b>Watersheds</b>
+            {% if dataset.watersheds %}
+            <ul>
+                {% for watershed in dataset.watersheds %}
+                <li><a href="{{ url_for('watershed_detail', id=watershed.id) }}">{{ watershed.name }}</a></li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </li>
+        <li><b>Raw file</b>: {{ dataset.raw_path() }}</li>
+    </ul>
+{% else %}
+    <h1>Not found</h1>
+{% endif %}
+</body>
+</html>
