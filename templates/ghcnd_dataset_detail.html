@@ -5,8 +5,10 @@
     <title>GHCND Dataset</title>
 </head>
 <body>
-    {% if dataset %}
-    <h1>GHCND: {{ dataset.station_id }}</h1>
+{% if dataset %}
+<h1>GHCND: {{ dataset.station_id }}</h1>
+<ul>
+    <li><b>Watersheds</b>
         {% if dataset.watersheds %}
         <ul>
             {% for watershed in dataset.watersheds %}
@@ -14,8 +16,22 @@
             {% endfor %}
         </ul>
         {% endif %}
-    {% else %}
-    <h1>Not found</h1>
-    {% endif %}
+    </li>
+    <li><b>Created</b>: {{ dataset.created }}</li>
+    <li><b>Updated</b>: {{ dataset.updated }}</li>
+    {% set timespan = dataset.dv_timespan() %}
+    <li><b>Dataset Range</b>: {{ timespan[0] }} - {{ timespan[1] }}</li>
+    <li><b>Datasets</b>
+        <ul>
+            <li><a href="{{ url_for('ghcnd_dataset_raw_json', id=dataset.id) }}">Raw JSON</a></li>
+            <li><a href="{{ url_for('ghcnd_dataset_raw_csv', id=dataset.id) }}">Raw CSV</a></li>
+            <li><a href="{{ url_for('ghcnd_dataset_clean_csv', id=dataset.id) }}">Clean CSV</a></li>
+        </ul>
+    </li>
+    <li><a href="{{ url_for('ghcnd_dataset_update_dly', id=dataset.id) }}"><b>Update Values</b></a></li>
+</ul>
+{% else %}
+<h1>Not found</h1>
+{% endif %}
 </body>
 </html>

@@ -1,11 +1,20 @@
-import os.path
+import os
 import sys
-from flask import Flask, render_template
+import requests
+import json
+import pandas as pd
+import StringIO
+from ftplib import FTP
+from datetime import datetime
+from flask import Flask, render_template, redirect, url_for, flash, Response
 from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext import admin
 from flask.ext.admin.contrib import sqla
 
 app = Flask(__name__)
+
+# configure sessions
+app.config['SECRET_KEY'] = 'A0Zr98j/3yX R~XHH!jmN]LWX/,?RT'
 
 # configure SQLAlchemy
 app.config['DATABASE_FILE'] = 'sample_db.sqlite'
@@ -32,13 +41,149 @@ class User(db.Model):
 class UsgsDataset(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     station_id = db.Column(db.String(120), nullable=False)
+    created = db.Column(db.DateTime, default=db.func.now())
+    updated = db.Column(db.DateTime)
+    drainage_area = db.Column(db.Float)
+    start_date = db.Column(db.DateTime, default=datetime(2000,1,1))
+    end_date = db.Column(db.DateTime)
 
-    def fetch_data(self):
-        print 'Getting data...'
-        return [0, 1, 2]
+    def path(self):
+        return os.path.join(app.config['DATA_FOLDER'], 'usgs', self.station_id)
 
-    def raw_path(self):
-        return os.path.join(app.config['DATA_FOLDER'], 'usgs', self.station_id + '.json')
+    def site_path(self):
+        return os.path.join(self.path(), 'site.rdb')
+
+    def raw_json_path(self):
+        return os.path.join(self.path(), 'dv.json')
+
+    def fetch_raw(self):
+        if not os.path.exists(self.path()):
+            os.mkdir(self.path())
+
+        end_date =  datetime.now().date().isoformat() if self.end_date is None else self.end_date.isoformat()
+
+        url = 'http://waterservices.usgs.gov/nwis/dv/'
+        params = {'format': 'json,1.1', 'parameterCd': '00060', 'startDT': self.start_date.date().isoformat(), 'endDT': end_date, 'sites': self.station_id}
+
+        r = requests.get(url, params=params)
+
+        if r.ok is False:
+            print 'Request Error %d: %s' % (r.status_code, r.reason)
+            return False
+
+        with open(self.raw_json_path(), 'w') as f:
+            f.write(r.content)
+
+        self.updated = datetime.utcnow()
+        db.session.commit()
+        
+        return True
+
+    def get_raw_dataframe(self):
+        if not os.path.exists(self.raw_json_path()):
+            self.fetch_raw()
+
+        raw_file = open(self.raw_json_path(), 'r')
+        data = json.load(raw_file)
+
+        # get timeseries data        
+        ts = data['value']['timeSeries'][0]
+        nodatavalue = ts['variable']['noDataValue']
+
+        # extract time series as lists
+        dates = [value['dateTime'] for value in ts['values'][0]['value']]
+        values = [float(value['value']) for value in ts['values'][0]['value'] ]
+
+        # convert to pandas.DataFrame
+        df = pd.DataFrame({'Flow_cfs': values},
+                          index=pd.to_datetime(dates).to_period("D"))
+        df.index = df.index.rename('Date')
+        df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
+
+        # replace missing values
+        df['Flow_cfs'][df['Flow_cfs']==nodatavalue] = None
+
+        return df
+
+    def dv_missing(self):
+        df = self.get_raw_dataframe()
+        missing = df['Flow_cfs'].isnull().sum()
+        return missing
+
+    def dv_timespan(self):
+        df = self.get_raw_dataframe()
+        start = df.index[0]
+        end = df.index[-1]
+        return (start.to_timestamp().date().isoformat(), end.to_timestamp().date().isoformat())
+
+    def fetch_site(self):
+        if not os.path.exists(self.path()):
+            os.mkdir(self.path())
+
+        url = 'http://waterservices.usgs.gov/nwis/site/'
+        params = {'format': 'rdb', 'sites': self.station_id, 'siteOutput': 'expanded'}
+
+        r = requests.get(url, params=params)
+
+        if r.ok is False:
+            print 'Request Error %d: %s' % (r.status_code, r.reason)
+            print r.url
+            return False
+
+        with open(self.site_path(), 'w') as f:
+            f.write(r.content)
+
+    def get_site_dict(self):
+        with open(self.site_path(), 'r') as f:
+            lines = [line for line in f if line[0] != '#']
+        
+        header = [item.strip() for item in lines[0].split('\t')]
+        row = [item.strip() for item in lines[2].split('\t')]
+        site_info = dict(zip(header, row))
+        return site_info
+
+    def get_clean_dataframe(self):
+        df = self.get_raw_dataframe()
+        df['Flow_cfs'] = pd.Series.interpolate(df['Flow_cfs'])
+        if self.drainage_area is None:
+            self.update_site()
+        df['Flow_in'] = df['Flow_cfs']/self.drainage_area*86400.*12./5280.**2
+        return df
+
+    def get_raw_json(self):
+        df = self.get_raw_dataframe()
+        f = StringIO.StringIO()
+        df.to_json(f, orient='records')
+        return f.getvalue()
+
+    def get_raw_csv(self):
+        df = self.get_raw_dataframe()
+        f = StringIO.StringIO()
+        df.to_csv(f, index=False, cols=['Date', 'Flow_cfs'])
+        return f.getvalue()
+
+    def get_clean_csv(self):
+        df = self.get_clean_dataframe()
+        f = StringIO.StringIO()
+        df.to_csv(f, index=False, cols=['Date', 'Flow_cfs', 'Flow_in'])
+        return f.getvalue()
+
+    def update_site(self):
+        self.fetch_site()
+        site_info = self.get_site_dict()
+        if len(site_info['contrib_drain_area_va']) > 0:
+            self.drainage_area = float(site_info['drain_area_va'])
+            db.session.commit()
+            return True
+        elif len(site_info['drain_area_va']) > 0:
+            self.drainage_area = float(site_info['drain_area_va'])
+            db.session.commit()
+            return True
+        return False
+
+    def update(self):
+        self.fetch_raw()
+        return True
 
     def __unicode__(self):
         return self.station_id
@@ -46,6 +191,149 @@ class UsgsDataset(db.Model):
 class GhcndDataset(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     station_id = db.Column(db.String(120), nullable=False)
+    created = db.Column(db.DateTime, default=db.func.now())
+    updated = db.Column(db.DateTime)
+
+    def path(self):
+        return os.path.join(app.config['DATA_FOLDER'], 'ghcnd', self.station_id)
+
+    def raw_dly_path(self):
+        return os.path.join(self.path(), 'data.dly')
+
+    def fetch_dly(self):
+        if not os.path.exists(self.path()):
+            os.mkdir(self.path())
+
+        ftp = FTP("ftp.ncdc.noaa.gov")
+        ftp.login()
+        ftp.cwd('/pub/data/ghcn/daily/all')
+
+        filename = self.station_id + ".dly"
+        
+        ftp.retrbinary('RETR ' + filename, open(self.raw_dly_path(), 'wb').write)
+        
+        self.updated = datetime.utcnow()
+        db.session.commit()
+        
+        return True
+
+    def get_raw_dataframe(self):
+        elements=["PRCP","TMIN","TMAX"]
+
+        unit_converters = {
+            'PRCP': lambda x: x/100./2.54, # 0.1 mm -> in
+            'TMIN': lambda x: x/10.,       # 0.1 degC -> degC
+            'TMAX': lambda x: x/10.        # 0.1 degC -> degC
+        }
+
+        start_columns = [
+            ('ID', 0, 11, str),
+            ('YEAR', 11, 15, int),
+            ('MONTH', 15, 17, int),
+            ('ELEMENT', 17, 21, str),
+        ]
+
+        value_columns = [
+            ('VALUE', 0, 5, float),
+            ('MFLAG', 5, 6, str),
+            ('QFLAG', 6, 7, str),
+            ('SFLAG', 7, 8, str),
+        ]
+
+        columns = start_columns
+        for i in xrange(1, 32):
+            columns += [(name + str(i), start+13+(8*i), end+13+(8*i), converter)
+                        for name, start, end, converter in value_columns]
+
+        colspecs = [(start, end) for name, start, end, converter in columns]
+
+        station_data = pd.read_fwf(self.raw_dly_path(), colspecs=colspecs, header=None, index_col=None, na_values=[-9999])
+        station_data.columns = [name for name, start, end, converter in columns]
+
+        dataframes = {}
+        for element_name, element_df in station_data.groupby('ELEMENT'):
+            if not elements is None and element_name not in elements:
+                continue
+
+            element_df['MONTH_PERIOD'] = element_df.apply(lambda x: pd.Period('%s-%s' % (x['YEAR'], x['MONTH'])), axis=1)
+            element_df = element_df.set_index('MONTH_PERIOD')
+
+            monthly_index = element_df.index
+            daily_index = element_df.resample('D').index.copy()
+
+            month_starts = monthly_index.asfreq('D', how='S')
+            dataframe = pd.DataFrame(columns=['VALUE', 'MFLAG', 'QFLAG', 'SFLAG'], index=daily_index)
+            dataframe.index = dataframe.index.rename("DATE")
+
+            for day_of_month in range(1, 32):
+                dates = [date for date in (month_starts + day_of_month - 1)
+                        if date.day == day_of_month]
+                if not len(dates):
+                    continue
+                months = pd.PeriodIndex([pd.Period(date, 'M') for date in dates])
+                for column_name in dataframe.columns:
+                    col = column_name + str(day_of_month)
+                    dataframe[column_name][dates] = element_df[col][months]
+
+            dataframes[element_name] = dataframe
+
+        # convert units
+        for element_name in dataframes.keys():
+            dataframes[element_name]['VALUE'] = dataframes[element_name]['VALUE'].apply(unit_converters.get(element_name, lambda x: x))
+
+        # combine VALUE column for each element into single dataframe
+        dataframe = pd.DataFrame(dict([(element_name, dataframes[element_name]['VALUE']) for element_name in dataframes.keys()]))
+
+        # rename columns
+        rename_columns = {
+            'PRCP': 'Precip_in',
+            'TMIN': 'Tmin_degC',
+            'TMAX': 'Tmax_degC'
+        }
+        dataframe = dataframe.rename(columns=rename_columns)
+        dataframe.index = dataframe.index.rename('Date')
+        
+        last_date = dataframe.index[dataframe.any(axis=1)].to_datetime().max()
+        dataframe = dataframe[:last_date]
+
+        dataframe['Date'] = [date.date().isoformat() for date in dataframe.index.to_timestamp()]
+
+        return dataframe
+
+    def get_clean_dataframe(self):
+        df = self.get_raw_dataframe()
+        df['Precip_in'] = df['Precip_in'].fillna(value=0)
+        for element in ['Tmin_degC', 'Tmax_degC']:
+            df[element] = pd.Series.interpolate(df[element])
+        return df
+
+    def dv_timespan(self):
+        df = self.get_raw_dataframe()
+        start = df.index[0]
+        end = df.index[-1]
+        return (start.to_timestamp().date().isoformat(), end.to_timestamp().date().isoformat())
+
+    def get_raw_json(self):
+        df = self.get_raw_dataframe()
+        f = StringIO.StringIO()
+        df.to_json(f, orient='records')
+        return f.getvalue()
+
+    def get_raw_csv(self):
+        df = self.get_raw_dataframe()
+        f = StringIO.StringIO()
+        df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
+        return f.getvalue()
+
+    def get_clean_csv(self):
+        df = self.get_clean_dataframe()
+        f = StringIO.StringIO()
+        df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
+        return f.getvalue()
+
+    def update(self):
+        self.fetch_dly()
+        return True
 
     def __unicode__(self):
         return self.station_id
@@ -53,15 +341,40 @@ class GhcndDataset(db.Model):
 class Watershed(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
+    start_date = db.Column(db.DateTime, default=datetime(2010,1,1))
 
     usgs_dataset_id = db.Column(db.Integer(), db.ForeignKey(UsgsDataset.id), nullable=False)
     ghcnd_dataset_id = db.Column(db.Integer(), db.ForeignKey(GhcndDataset.id), nullable=False)
     usgs = db.relationship(UsgsDataset, backref="watersheds")
     ghcnd = db.relationship(GhcndDataset, backref="watersheds")
 
+    def dataframe(self):
+        usgs = self.usgs.get_clean_dataframe()
+        usgs = usgs[self.start_date:]
+        ghcnd = self.ghcnd.get_clean_dataframe()
+        ghcnd = ghcnd[self.start_date:]
+        df = usgs[['Flow_in']].merge(ghcnd[['Precip_in', 'Tmax_degC', 'Tmin_degC']], how='outer', left_index=True, right_index=True)
+        df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
+        return df
+    
+    def update(self):
+        self.usgs.update()
+        self.ghcnd.update()
+
+    def get_dataset_json(self):
+        df = self.dataframe()
+        f = StringIO.StringIO()
+        df.to_json(f, orient='records')
+        return f.getvalue()
+
+    def get_dataset_csv(self):
+        df = self.dataframe()
+        f = StringIO.StringIO()
+        df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC', 'Flow_in'])
+        return f.getvalue()
+
     def __unicode__(self):
         return self.name
-
 
 # routes
 @app.route('/')
@@ -78,6 +391,37 @@ def usgs_dataset_detail(id):
     usgs_dataset = UsgsDataset.query.get(id)
     return render_template('usgs_dataset_detail.html', dataset=usgs_dataset)
 
+@app.route('/usgs_datasets/<int:id>/update_dv')
+def usgs_dataset_update_dv(id):
+    usgs_dataset = UsgsDataset.query.get(id)
+    if usgs_dataset.update_dv() is True:
+        flash('Update successful')
+        return redirect(url_for('usgs_dataset_detail', id=id))
+    else:
+        flash('Update failed')
+        return redirect(url_for('usgs_dataset_detail', id=id))
+
+@app.route('/usgs_datasets/<int:id>/update_site')
+def usgs_dataset_update_site(id):
+    usgs_dataset = UsgsDataset.query.get(id)
+    usgs_dataset.update_site()
+    return redirect(url_for('usgs_dataset_detail', id=id))
+
+@app.route('/usgs_datasets/<int:id>/raw.json')
+def usgs_dataset_raw_json(id):
+    usgs_dataset = UsgsDataset.query.get(id)
+    return Response(usgs_dataset.get_raw_json(), mimetype='application/json')
+
+@app.route('/usgs_datasets/<int:id>/raw.csv')
+def usgs_dataset_raw_csv(id):
+    usgs_dataset = UsgsDataset.query.get(id)
+    return Response(usgs_dataset.get_raw_csv(), mimetype='text/csv')
+
+@app.route('/usgs_datasets/<int:id>/clean.csv')
+def usgs_dataset_clean_csv(id):
+    usgs_dataset = UsgsDataset.query.get(id)
+    return Response(usgs_dataset.get_clean_csv(), mimetype='text/csv')
+
 @app.route('/ghcnd_datasets')
 def ghcnd_dataset_list():
     ghcnd_datasets = GhcndDataset.query.all()
@@ -87,6 +431,31 @@ def ghcnd_dataset_list():
 def ghcnd_dataset_detail(id):
     ghcnd_dataset = GhcndDataset.query.get(id)
     return render_template('ghcnd_dataset_detail.html', dataset=ghcnd_dataset)
+
+@app.route('/ghcnd_datasets/<int:id>/update_dv')
+def ghcnd_dataset_update_dly(id):
+    ghcnd_dataset = GhcndDataset.query.get(id)
+    if ghcnd_dataset.fetch_dly() is True:
+        flash('Update successful')
+        return redirect(url_for('ghcnd_dataset_detail', id=id))
+    else:
+        flash('Update failed')
+        return redirect(url_for('ghcnd_dataset_detail', id=id))
+
+@app.route('/ghcnd_datasets/<int:id>/raw.json')
+def ghcnd_dataset_raw_json(id):
+    ghcnd_dataset = GhcndDataset.query.get(id)
+    return Response(ghcnd_dataset.get_raw_json(), mimetype='application/json')
+
+@app.route('/ghcnd_datasets/<int:id>/raw.csv')
+def ghcnd_dataset_raw_csv(id):
+    ghcnd_dataset = GhcndDataset.query.get(id)
+    return Response(ghcnd_dataset.get_raw_csv(), mimetype='text/csv')
+
+@app.route('/ghcnd_datasets/<int:id>/clean.csv')
+def ghcnd_dataset_clean_csv(id):
+    ghcnd_dataset = GhcndDataset.query.get(id)
+    return Response(ghcnd_dataset.get_clean_csv(), mimetype='text/csv')
 
 @app.route('/watersheds')
 def watershed_list():
@@ -98,13 +467,25 @@ def watershed_detail(id):
     watershed = Watershed.query.get(id)
     return render_template('watershed_detail.html', watershed=watershed)
 
-# admin views
-# class WatershedAdmin(sqla.ModelView):
-#     inline_models = [(UsgsDataset, dict(form_columns=['station_id']))]
+@app.route('/watersheds/<int:id>/update')
+def watershed_update(id):
+    watershed = Watershed.query.get(id)
+    watershed.update()
+    flash('Update successful')
+    return redirect(url_for('watershed_detail', id=id))
+
+@app.route('/watersheds/<int:id>/dataset.json')
+def watershed_dataset_json(id):
+    watershed = Watershed.query.get(id)
+    return Response(watershed.get_dataset_json(), mimetype='text/csv')
+
+@app.route('/watersheds/<int:id>/dataset.csv')
+def watershed_dataset_csv(id):
+    watershed = Watershed.query.get(id)
+    return Response(watershed.get_dataset_csv(), mimetype='text/csv')
 
 admin.add_view(sqla.ModelView(User, db.session))
 admin.add_view(sqla.ModelView(Watershed, db.session))
-# admin.add_view(WatershedAdmin(Watershed, db.session))
 admin.add_view(sqla.ModelView(UsgsDataset, db.session))
 admin.add_view(sqla.ModelView(GhcndDataset, db.session))
 
@@ -130,7 +511,6 @@ def build_sample_db():
         ghcnd_dataset = GhcndDataset()
         ghcnd_dataset.station_id = ghcnd_station
         db.session.add(ghcnd_dataset)
-        # db.session.commit()
 
         watershed = Watershed()
         watershed.name = name
@@ -138,15 +518,14 @@ def build_sample_db():
         watershed.ghcnd = ghcnd_dataset
 
         db.session.add(watershed)
-        db.session.commit()
+    
+    db.session.commit()
     return
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'clean':
         build_sample_db()
-
-    if not os.path.exists(app.config['DATABASE_PATH']):
-        print 'Building database'
+    elif not os.path.exists(app.config['DATABASE_PATH']):
         build_sample_db()
 
     app.run(debug=True)

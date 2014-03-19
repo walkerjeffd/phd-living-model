@@ -5,6 +5,15 @@
     <title>USGS Dataset</title>
 </head>
 <body>
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <ul>
+    {% for message in messages %}
+      <li>{{ message }}</li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
 {% if dataset %}
     <h1>USGS: {{ dataset.station_id }}</h1>
     <ul>
@@ -17,7 +26,20 @@
             </ul>
             {% endif %}
         </li>
-        <li><b>Raw file</b>: {{ dataset.raw_path() }}</li>
+        <li><b>Drainage Area</b>: {{ dataset.drainage_area }}</li>
+        <li><b>Created</b>: {{ dataset.created }}</li>
+        <li><b>Updated</b>: {{ dataset.updated }}</li>
+        <li><b>Dataset Range</b>: {{ dataset.dv_timespan()[0] }} - {{ dataset.dv_timespan()[1] }}</li>
+        <li><b>No. Missing</b>: {{ dataset.dv_missing() }}</li>
+        <li><b>Datasets</b>
+            <ul>
+                <li><a href="{{ url_for('usgs_dataset_raw_json', id=dataset.id) }}">Raw JSON</a></li>
+                <li><a href="{{ url_for('usgs_dataset_raw_csv', id=dataset.id) }}">Raw CSV</a></li>
+                <li><a href="{{ url_for('usgs_dataset_clean_csv', id=dataset.id) }}">Clean CSV</a></li>
+            </ul>
+        </li>
+        <li><a href="{{ url_for('usgs_dataset_update_dv', id=dataset.id) }}"><b>Update Values</b></a></li>
+        <li><a href="{{ url_for('usgs_dataset_update_site', id=dataset.id) }}"><b>Update Site</b></a></li>
     </ul>
 {% else %}
     <h1>Not found</h1>

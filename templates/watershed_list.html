@@ -8,7 +8,7 @@
     <h1>List of Watersheds</h1>
     <ul>
     {% for watershed in watersheds %}
-        <li><a href="{{ url_for('watershed_detail', id=watershed.id) }}">{{ watershed.name }}</a></li>    
+        <li><a href="{{ url_for('watershed_detail', id=watershed.id) }}">{{ watershed.name }}</a></li>
     {% endfor %}
     </ul>
 </body>
