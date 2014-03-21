@@ -1,4 +1,3 @@
-
 import os
 import sys
 import requests
@@ -65,7 +64,7 @@ class UsgsDataset(db.Model):
     def raw_json_path(self):
         return os.path.join(self.path(), 'dv.json')
 
-    def fetch_raw(self):
+    def fetch_data(self):
         if not os.path.exists(self.path()):
             os.mkdir(self.path())
 
@@ -89,9 +88,9 @@ class UsgsDataset(db.Model):
         
         return True
 
-    def get_raw_dataframe(self):
+    def get_raw_dataset(self):
         if not os.path.exists(self.raw_json_path()):
-            self.fetch_raw()
+            self.fetch_data()
 
         raw_file = open(self.raw_json_path(), 'r')
         data = json.load(raw_file)
@@ -117,13 +116,13 @@ class UsgsDataset(db.Model):
 
     def missing(self, df=None):
         if (df is None):
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
         missing = df['Flow_cfs'].isnull().sum()
         return missing
 
     def timespan(self, df=None):
         if (df is None):
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
         start = df.index[0]
         end = df.index[-1]
         return (start.to_timestamp(), end.to_timestamp())
@@ -159,8 +158,8 @@ class UsgsDataset(db.Model):
         site_info = dict(zip(header, row))
         return site_info
 
-    def get_clean_dataframe(self):
-        df = self.get_raw_dataframe()
+    def get_clean_dataset(self):
+        df = self.get_raw_dataset()
         df['Flow_cfs'] = pd.Series.interpolate(df['Flow_cfs'])
         if self.drainage_area is None:
             self.update_site()
@@ -168,19 +167,19 @@ class UsgsDataset(db.Model):
         return df
 
     def get_raw_json(self):
-        df = self.get_raw_dataframe()
+        df = self.get_raw_dataset()
         f = StringIO.StringIO()
         df.to_json(f, orient='records')
         return f.getvalue()
 
     def get_raw_csv(self):
-        df = self.get_raw_dataframe()
+        df = self.get_raw_dataset()
         f = StringIO.StringIO()
         df.to_csv(f, index=False, cols=['Date', 'Flow_cfs'])
         return f.getvalue()
 
     def get_clean_csv(self):
-        df = self.get_clean_dataframe()
+        df = self.get_clean_dataset()
         f = StringIO.StringIO()
         df.to_csv(f, index=False, cols=['Date', 'Flow_cfs', 'Flow_in'])
         return f.getvalue()
@@ -220,9 +219,9 @@ class UsgsDataset(db.Model):
         return False
 
     def update(self):
-        if self.fetch_raw():
+        if self.fetch_data():
             self.updated = db.func.now()
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
             span = self.timespan(df)
             self.start_date = span[0]
             self.end_date = span[1]
@@ -261,7 +260,7 @@ class GhcndDataset(db.Model):
     def raw_dly_path(self):
         return os.path.join(self.path(), 'data.dly')
 
-    def fetch_dly(self):
+    def fetch_data(self):
         if not os.path.exists(self.path()):
             os.mkdir(self.path())
 
@@ -326,9 +325,9 @@ class GhcndDataset(db.Model):
         self.name = site['NAME'][0]
         db.session.commit()
 
-    def get_raw_dataframe(self):
+    def get_raw_dataset(self):
         if not os.path.exists(self.raw_dly_path()):
-            self.fetch_dly()
+            self.fetch_data()
 
         elements=["PRCP","TMIN","TMAX"]
 
@@ -362,7 +361,7 @@ class GhcndDataset(db.Model):
         station_data = pd.read_fwf(self.raw_dly_path(), colspecs=colspecs, header=None, index_col=None, na_values=[-9999])
         station_data.columns = [name for name, start, end, converter in columns]
 
-        dataframes = {}
+        dfs = {}
         for element_name, element_df in station_data.groupby('ELEMENT'):
             if not elements is None and element_name not in elements:
                 continue
@@ -374,8 +373,8 @@ class GhcndDataset(db.Model):
             daily_index = element_df.resample('D').index.copy()
 
             month_starts = monthly_index.asfreq('D', how='S')
-            dataframe = pd.DataFrame(columns=['VALUE', 'MFLAG', 'QFLAG', 'SFLAG'], index=daily_index)
-            dataframe.index = dataframe.index.rename("DATE")
+            df = pd.DataFrame(columns=['VALUE', 'MFLAG', 'QFLAG', 'SFLAG'], index=daily_index)
+            df.index = df.index.rename("DATE")
 
             for day_of_month in range(1, 32):
                 dates = [date for date in (month_starts + day_of_month - 1)
@@ -383,18 +382,18 @@ class GhcndDataset(db.Model):
                 if not len(dates):
                     continue
                 months = pd.PeriodIndex([pd.Period(date, 'M') for date in dates])
-                for column_name in dataframe.columns:
+                for column_name in df.columns:
                     col = column_name + str(day_of_month)
-                    dataframe[column_name][dates] = element_df[col][months]
+                    df[column_name][dates] = element_df[col][months]
 
-            dataframes[element_name] = dataframe
+            dfs[element_name] = df
 
         # convert units
-        for element_name in dataframes.keys():
-            dataframes[element_name]['VALUE'] = dataframes[element_name]['VALUE'].apply(unit_converters.get(element_name, lambda x: x))
+        for element_name in dfs.keys():
+            dfs[element_name]['VALUE'] = dfs[element_name]['VALUE'].apply(unit_converters.get(element_name, lambda x: x))
 
-        # combine VALUE column for each element into single dataframe
-        dataframe = pd.DataFrame(dict([(element_name, dataframes[element_name]['VALUE']) for element_name in dataframes.keys()]))
+        # combine VALUE column for each element into single df
+        df = pd.DataFrame(dict([(element_name, dfs[element_name]['VALUE']) for element_name in dfs.keys()]))
 
         # rename columns
         rename_columns = {
@@ -402,21 +401,21 @@ class GhcndDataset(db.Model):
             'TMIN': 'Tmin_degC',
             'TMAX': 'Tmax_degC'
         }
-        dataframe = dataframe.rename(columns=rename_columns)
-        dataframe.index = dataframe.index.rename('Date')
+        df = df.rename(columns=rename_columns)
+        df.index = df.index.rename('Date')
         
-        last_date = dataframe.index[dataframe.any(axis=1)].to_datetime().max()
-        dataframe = dataframe[:last_date]
+        last_date = df.index[df.any(axis=1)].to_datetime().max()
+        df = df[:last_date]
 
-        dataframe = dataframe[self.start_date:]
+        df = df[self.start_date:]
 
-        dataframe['Date'] = [date.date().isoformat() for date in dataframe.index.to_timestamp()]
+        df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
 
-        return dataframe
+        return df
 
-    def get_clean_dataframe(self, df=None):
+    def get_clean_dataset(self, df=None):
         if df is None:
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
         df['Precip_in'] = df['Precip_in'].fillna(value=0)
         for element in ['Tmin_degC', 'Tmax_degC']:
             df[element] = pd.Series.interpolate(df[element])
@@ -424,44 +423,43 @@ class GhcndDataset(db.Model):
 
     def timespan(self, df=None):
         if df is None:
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
         start = df.index[0]
         end = df.index[-1]
         return (start.to_timestamp(), end.to_timestamp())
 
     def missing(self, df=None):
         if df is None:
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
         missing = df[['Precip_in', 'Tmin_degC', 'Tmax_degC']].isnull().sum().sum()
         return missing
 
     def get_raw_json(self, df=None):
         if df is None:
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
         f = StringIO.StringIO()
         df.to_json(f, orient='records')
         return f.getvalue()
 
     def get_raw_csv(self, df=None):
         if df is None:
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
         f = StringIO.StringIO()
         df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
         return f.getvalue()
 
     def get_clean_csv(self, df=None):
         if df is None:
-            df = self.get_clean_dataframe()
+            df = self.get_clean_dataset()
         f = StringIO.StringIO()
         df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
         return f.getvalue()
 
     def update(self):
-        if self.fetch_dly():
+        if self.fetch_data():
             self.updated = db.func.now()
-            df = self.get_raw_dataframe()
+            df = self.get_raw_dataset()
             span = self.timespan(df)
-            # self.start_date = span[0]
             self.end_date = span[1]
             self.count_missing = self.missing(df)
             db.session.commit()
@@ -482,18 +480,18 @@ class Watershed(db.Model):
     end_date = db.Column(db.DateTime)
     latitude = db.Column(db.Float)
 
-    usgs_dataset_id = db.Column(db.Integer(), db.ForeignKey(UsgsDataset.id))
-    ghcnd_dataset_id = db.Column(db.Integer(), db.ForeignKey(GhcndDataset.id))
+    usgs_id = db.Column(db.Integer(), db.ForeignKey(UsgsDataset.id))
+    ghcnd_id = db.Column(db.Integer(), db.ForeignKey(GhcndDataset.id))
     usgs = db.relationship(UsgsDataset, backref="watersheds")
     ghcnd = db.relationship(GhcndDataset, backref="watersheds")
 
-    def dataframe(self):
+    def get_dataset(self):
         start = self.start_date.isoformat()
         end = self.end_date.isoformat()
 
-        usgs = self.usgs.get_clean_dataframe()
+        usgs = self.usgs.get_clean_dataset()
         usgs = usgs[start:end]
-        ghcnd = self.ghcnd.get_clean_dataframe()
+        ghcnd = self.ghcnd.get_clean_dataset()
         ghcnd = ghcnd[start:end]
         df = usgs[['Flow_in']].merge(ghcnd[['Precip_in', 'Tmax_degC', 'Tmin_degC']], how='outer', left_index=True, right_index=True)
         df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
@@ -501,7 +499,7 @@ class Watershed(db.Model):
 
     def timespan(self, df=None):
         if df is None:
-            df = self.dataframe()
+            df = self.get_dataset()
         start = df.index[0]
         end = df.index[-1]
         return (start.to_timestamp(), end.to_timestamp())
@@ -512,13 +510,13 @@ class Watershed(db.Model):
         self.end_date = min(self.usgs.end_date, self.ghcnd.end_date)
 
     def get_dataset_json(self):
-        df = self.dataframe()
+        df = self.get_dataset()
         f = StringIO.StringIO()
         df.to_json(f, orient='records')
         return f.getvalue()
 
     def get_dataset_csv(self):
-        df = self.dataframe()
+        df = self.get_dataset()
         f = StringIO.StringIO()
         df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC', 'Flow_in'])
         return f.getvalue()
@@ -630,16 +628,6 @@ def ghcnd_dataset_detail(id):
     ghcnd_dataset = GhcndDataset.query.get(id)
     return render_template('ghcnd_dataset_detail.html', dataset=ghcnd_dataset)
 
-@app.route('/datasets/ghcnd/<int:id>/update')
-def ghcnd_dataset_update_dly(id):
-    ghcnd_dataset = GhcndDataset.query.get(id)
-    if ghcnd_dataset.fetch_dly() is True:
-        flash('Update successful')
-        return redirect(url_for('ghcnd_dataset_detail', id=id))
-    else:
-        flash('Update failed')
-        return redirect(url_for('ghcnd_dataset_detail', id=id))
-
 @app.route('/datasets/ghcnd/<int:id>/raw.json')
 def ghcnd_dataset_raw_json(id):
     ghcnd_dataset = GhcndDataset.query.get(id)
@@ -712,7 +700,7 @@ class WatershedAdminView(sqla.ModelView):
 class ModelAdminView(sqla.ModelView):
     form_create_rules = ('name', 'watershed')
 
-admin.add_view(sqla.ModelView(User, db.session))
+# admin.add_view(sqla.ModelView(User, db.session))
 admin.add_view(ModelAdminView(Model, db.session))
 admin.add_view(WatershedAdminView(Watershed, db.session))
 admin.add_view(USGSAdminView(UsgsDataset, db.session))
