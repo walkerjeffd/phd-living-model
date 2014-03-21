@@ -1,0 +1,12 @@
+{% extends "base_bootstrap.html" %}
+
+{% block title %}Datasets{% endblock %}
+
+{% block content %}
+    <h1>Datasets</h1>
+    <ul>
+        <li><a href="{{ url_for('usgs_dataset_list') }}">USGS Datasets</a></li>
+        <li><a href="{{ url_for('ghcnd_dataset_list') }}">GHCND Datasets</a></li>
+        <li><a href="{{ url_for('watershed_list') }}">Watersheds</a></li>
+    </ul>
+{% endblock %}

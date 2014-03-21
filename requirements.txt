@@ -1,0 +1,13 @@
+Flask==0.10.1
+Flask-Admin==1.0.7
+Flask-Login==0.2.10
+Flask-Restless==0.12.1
+Flask-SQLAlchemy==1.0
+Frozen-Flask==0.11
+Jinja2==2.7.2
+MarkupSafe==0.18
+SQLAlchemy==0.9.3
+WTForms==1.0.5
+Werkzeug==0.9.4
+itsdangerous==0.23
+requests==2.2.1

@@ -1,37 +1,44 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>GHCND Dataset</title>
-</head>
-<body>
+{% extends "base_bootstrap.html" %}
+{% block title %}GHCND Dataset{% endblock %}
+{% block content %}
 {% if dataset %}
-<h1>GHCND: {{ dataset.station_id }}</h1>
-<ul>
-    <li><b>Watersheds</b>
+    <h1>{{ dataset.name }}</h1>
+    <ul class="list-unstyled">
+        <li><b>URL</b>: <a href="{{ url_for('ghcnd_dataset_detail', id=dataset.id) }}">{{ url_for('ghcnd_dataset_detail', id=dataset.id) }}</a></li>
+        {% set homepage = 'http://www.ncdc.noaa.gov/cdo-web/datasets/GHCND/stations/GHCND:' + dataset.station_id + '/detail' %}
+        <li><b>GHCND</b>: <a href="{{ homepage }}">{{ homepage }}</a></li>
+        <li><b>Station ID</b>: {{ dataset.station_id }}</li>
+        <li><b>Name</b>: {{ dataset.name }}</li>
+        <li><b>Latitude</b>: {{ dataset.latitude }}</li>
+        <li><b>Longitude</b>: {{ dataset.longitude }}</li>
+        <li><b>Created</b>: {{ dataset.created }}</li>
+        <li><b>Updated</b>: {{ dataset.updated }}</li>
+        <li><b>Dataset Range</b>: {{ dataset.start_date.date() }} - {{ dataset.end_date.date() }}</li>
+        <li><b>No. Missing</b>: {{ dataset.count_missing }}</li>
+        <li><b>Datasets</b>
+            <ul>
+                <li><a href="{{ url_for('ghcnd_dataset_raw_json', id=dataset.id) }}">Raw JSON</a></li>
+                <li><a href="{{ url_for('ghcnd_dataset_raw_csv', id=dataset.id) }}">Raw CSV</a></li>
+                <li><a href="{{ url_for('ghcnd_dataset_clean_csv', id=dataset.id) }}">Clean CSV</a></li>
+            </ul>
+        </li>
+        <li><a href="{{ url_for('ghcnd_dataset_update_dly', id=dataset.id) }}"><b>Update Values</b></a></li>
         {% if dataset.watersheds %}
-        <ul>
-            {% for watershed in dataset.watersheds %}
-            <li><a href="{{ url_for('watershed_detail', id=watershed.id) }}">{{ watershed.name }}</a></li>
-            {% endfor %}
-        </ul>
+        <li><b>Watersheds</b>
+            <ul>
+                {% for watershed in dataset.watersheds %}
+                <li><a href="{{ url_for('watershed_detail', id=watershed.id) }}">{{ watershed.name }}</a></li>
+                {% endfor %}
+            </ul>
+        </li>
         {% endif %}
-    </li>
-    <li><b>Created</b>: {{ dataset.created }}</li>
-    <li><b>Updated</b>: {{ dataset.updated }}</li>
-    {% set timespan = dataset.dv_timespan() %}
-    <li><b>Dataset Range</b>: {{ timespan[0] }} - {{ timespan[1] }}</li>
-    <li><b>Datasets</b>
-        <ul>
-            <li><a href="{{ url_for('ghcnd_dataset_raw_json', id=dataset.id) }}">Raw JSON</a></li>
-            <li><a href="{{ url_for('ghcnd_dataset_raw_csv', id=dataset.id) }}">Raw CSV</a></li>
-            <li><a href="{{ url_for('ghcnd_dataset_clean_csv', id=dataset.id) }}">Clean CSV</a></li>
-        </ul>
-    </li>
-    <li><a href="{{ url_for('ghcnd_dataset_update_dly', id=dataset.id) }}"><b>Update Values</b></a></li>
-</ul>
+    </ul>
+
+    <div class="btn-group">
+        <a class="btn btn-default" href="{{ url_for('ghcnd_dataset_update', id=dataset.id) }}">Update Values</a>
+        <a class="btn btn-default"href="{{ url_for('ghcnd_dataset_update_site', id=dataset.id) }}">Update Site</a>
+    </div>
 {% else %}
-<h1>Not found</h1>
+    <h1>Not found</h1>
 {% endif %}
-</body>
-</html>
+{% endblock %}

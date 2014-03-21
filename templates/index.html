@@ -1,16 +1,13 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>WIWM</title>
-</head>
-<body>
-    <h1>Web-based Interactive Watershed Model</h1>
-    <ul>
-        <li><a href="/admin">Admin</a></li>
-        <li><a href="{{ url_for('usgs_dataset_list') }}">USGS Datasets</a></li>
-        <li><a href="{{ url_for('ghcnd_dataset_list') }}">GHCND Datasets</a></li>
-        <li><a href="{{ url_for('watershed_list') }}">Watersheds</a></li>
-    </ul>
-</body>
-</html>
+{% extends "base_bootstrap.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<h1>Living Model</h1>
+<div class="panel panel-default" style="width:800px">
+    <div class="panel-body">
+        <img src="{{ url_for('static', filename='img/living.gif')}}" width="770px" height="463px" alt="Demonstration">
+    </div>
+</div>
+
+{% endblock %}

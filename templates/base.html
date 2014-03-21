@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js"> <!--<![endif]-->
+  <head>
+  {% block head %}
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <title>{% block title %}Base Template{% endblock %} | Living Model</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Living Model">
+    <meta name="author" content="Jeffrey D. Walker">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap-theme.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+
+    <style>
+      {% block style %}
+      {% endblock %}
+    </style>
+  {% endblock %}
+  </head>
+
+<body>
+  <!--[if lt IE 7]>
+    <p class="chromeframe">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> or <a href="http://www.google.com/chromeframe/?redirect=true">activate Google Chrome Frame</a> to improve your experience.</p>
+  <![endif]-->
+  <div class="navbar navbar-default">
+    <div class="container">
+      <a class="navbar-brand" href="/">Living Model</a>          
+      <ul class="nav navbar-nav">
+        <li><a href="/">Home</a></li>
+        <li><a href="/models">Models</a></li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown">Datasets <b class="caret"></b></a>
+          <ul class="dropdown-menu" role="menu">
+            <li><a href="{{ url_for('usgs_dataset_list') }}">USGS</a></li>
+            <li><a href="{{ url_for('ghcnd_dataset_list') }}">GHCND</a></li>
+            <li><a href="{{ url_for('watershed_list') }}">Watersheds</a></li>
+          </ul>
+        </li>
+        <li><a href="/admin">Admin</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="container">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul>
+        {% for message in messages %}
+          <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    
+    {% block content %}
+    {% endblock %}
+  </div>
+    <div class="footer container text-center">
+      {% block footer %}
+        <hr>
+        &copy; 2014, Jeffrey D. Walker
+      {% endblock %}
+    </div>
+  </div>
+
+
+{% block templates %}
+{% endblock %}
+
+{% block scripts %}
+{% endblock %}
+</body>
+</html>

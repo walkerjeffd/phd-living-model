@@ -1,20 +1,6 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Watershed List</title>
-</head>
-<body>
-{% with messages = get_flashed_messages() %}
-  {% if messages %}
-    <ul>
-    {% for message in messages %}
-      <li>{{ message }}</li>
-    {% endfor %}
-    </ul>
-  {% endif %}
-{% endwith %}
-
+{% extends "base_bootstrap.html" %}
+{% block title %}Watershed{% endblock %}
+{% block content %}
 {% if watershed %}
 <h1>{{ watershed.name }}</h1>
 <ul>
@@ -30,6 +16,5 @@
 </ul>
 {% else %}
 <h1>Not found</h1>
-{% endif %}
-</body>
-</html>
+{% endif %}    
+{% endblock %}
