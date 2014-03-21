@@ -491,9 +491,16 @@ class Watershed(db.Model):
         usgs = usgs[self.start_date.isoformat():]
         ghcnd = self.ghcnd.get_clean_dataframe()
         ghcnd = ghcnd[self.start_date.isoformat():]
-        df = usgs[['Flow_in']].merge(ghcnd[['Precip_in', 'Tmax_degC', 'Tmin_degC']], how='outer', left_index=True, right_index=True)
+        df = usgs[['Flow_in']].merge(ghcnd[['Precip_in', 'Tmax_degC', 'Tmin_degC']], how='inner', left_index=True, right_index=True)
         df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
         return df
+
+    def timespan(self, df=None):
+        if df is None:
+            df = self.dataframe()
+        start = df.index[0]
+        end = df.index[-1]
+        return (start.to_timestamp(), end.to_timestamp())
     
     def update(self):
         self.usgs.update()
