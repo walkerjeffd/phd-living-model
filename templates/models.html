@@ -20,14 +20,12 @@
 
 <script type="text/template" id="template-info">
 <h1><%= name %></h1>
-<button class="btn btn-success" id="btn-save"><span class="glyphicon glyphicon-floppy-disk"></span> Save</button>
-<button class="btn btn-primary" id="btn-reset"><span class="glyphicon glyphicon-refresh"></span> Reset</button>
-<button class="btn btn-default" id="btn-dl-input"><span class="glyphicon glyphicon-save"></span> Download Input</button>
-<button class="btn btn-default" id="btn-dl-output"><span class="glyphicon glyphicon-save"></span> Download Output</button>
-<div id="charts">
-    <div class="chart" id="chart-precip"></div>
-    <div class="chart" id="chart-temp"></div>
-    <div class="chart" id="chart-flow"></div>
+<div>Input Dataset: <a href="/datasets/watersheds/<%= watershed.id %>"><%= watershed.name %></a></div>
+<div class="btn-group" style="margin-top:10px;">
+    <button class="btn btn-success" id="btn-save"><span class="glyphicon glyphicon-floppy-disk"></span> Save</button>
+    <button class="btn btn-primary" id="btn-reset"><span class="glyphicon glyphicon-refresh"></span> Reset</button>
+    <button class="btn btn-default" id="btn-dl-input"><span class="glyphicon glyphicon-save"></span> Download Input</button>
+    <button class="btn btn-default" id="btn-dl-output"><span class="glyphicon glyphicon-save"></span> Download Output</button>
 </div>
 </script>
 

@@ -39,7 +39,7 @@ define([
       this.listenTo(this.model, 'changeParam', this.recompute);
       this.listenTo(this.model, 'setExtent', this.setExtent);
       this.listenTo(this.model, 'fetchInput', this.fetchInput);
-      this.listenTo(this.model, 'all', function(e, model) { console.log('Model Event: ', e);});
+      // this.listenTo(this.model, 'all', function(e, model) { console.log('Model Event: ', e);});
       
       this.infoView = new InfoView({model: this.model, simModel: this.simModel, el: this.$('#model-info')});
       this.paramsView = new ParametersView({model: this.model, el: this.$('#params')});

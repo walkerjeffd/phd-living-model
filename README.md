@@ -8,5 +8,4 @@ Living Model
 
 ## TODO
 
-- fix end date of watershed dataset (min of Usgs and Ghcnd)
 - add d3 charts to dataset pages

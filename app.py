@@ -479,6 +479,7 @@ class Watershed(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     start_date = db.Column(db.DateTime, default=datetime(2010,1,1))
+    end_date = db.Column(db.DateTime)
     latitude = db.Column(db.Float)
 
     usgs_dataset_id = db.Column(db.Integer(), db.ForeignKey(UsgsDataset.id))
@@ -487,11 +488,14 @@ class Watershed(db.Model):
     ghcnd = db.relationship(GhcndDataset, backref="watersheds")
 
     def dataframe(self):
+        start = self.start_date.isoformat()
+        end = self.end_date.isoformat()
+
         usgs = self.usgs.get_clean_dataframe()
-        usgs = usgs[self.start_date.isoformat():]
+        usgs = usgs[start:end]
         ghcnd = self.ghcnd.get_clean_dataframe()
-        ghcnd = ghcnd[self.start_date.isoformat():]
-        df = usgs[['Flow_in']].merge(ghcnd[['Precip_in', 'Tmax_degC', 'Tmin_degC']], how='inner', left_index=True, right_index=True)
+        ghcnd = ghcnd[start:end]
+        df = usgs[['Flow_in']].merge(ghcnd[['Precip_in', 'Tmax_degC', 'Tmin_degC']], how='outer', left_index=True, right_index=True)
         df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
         return df
 
@@ -505,6 +509,7 @@ class Watershed(db.Model):
     def update(self):
         self.usgs.update()
         self.ghcnd.update()
+        self.end_date = min(self.usgs.end_date, self.ghcnd.end_date)
 
     def get_dataset_json(self):
         df = self.dataframe()
@@ -735,13 +740,11 @@ def build_sample_db():
         usgs_dataset.station_id = usgs_station
         db.session.add(usgs_dataset)
         usgs_dataset.update_site()
-        usgs_dataset.update()
 
         ghcnd_dataset = GhcndDataset()
         ghcnd_dataset.station_id = ghcnd_station
         db.session.add(ghcnd_dataset)
         ghcnd_dataset.update_site()
-        ghcnd_dataset.update()
 
         watershed = Watershed()
         watershed.name = name
@@ -749,6 +752,7 @@ def build_sample_db():
         watershed.usgs = usgs_dataset
         watershed.ghcnd = ghcnd_dataset
         db.session.add(watershed)
+        watershed.update()
 
         model = Model()
         model.name = watershed.name

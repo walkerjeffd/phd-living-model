@@ -22,7 +22,6 @@
                 <li><a href="{{ url_for('ghcnd_dataset_clean_csv', id=dataset.id) }}">Clean CSV</a></li>
             </ul>
         </li>
-        <li><a href="{{ url_for('ghcnd_dataset_update_dly', id=dataset.id) }}"><b>Update Values</b></a></li>
         {% if dataset.watersheds %}
         <li><b>Watersheds</b>
             <ul>
