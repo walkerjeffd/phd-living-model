@@ -619,11 +619,15 @@ class Model(db.Model):
     watershed_id = db.Column(db.Integer(), db.ForeignKey(Watershed.id))
     watershed = db.relationship(Watershed, backref='models')
 
+    def input_url(self):
+        url = url_for('watershed_dataset_csv', id=self.watershed.id)
+        return url
+
     def __unicode__(self):
         return self.name
 
 # api endpoints
-model_blueprint = manager.create_api(Model, methods=['GET', 'PUT'])
+model_blueprint = manager.create_api(Model, methods=['GET', 'PUT'], include_methods=['input_url'])
 
 # routes
 @app.route('/')
@@ -821,6 +825,7 @@ def create_watershed(name, usgs_station, ghcnd_station):
     db.session.commit()
 
     watershed.update()
+
     return watershed
 
 

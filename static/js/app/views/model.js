@@ -58,7 +58,7 @@ define([
 
     fetchInput: function () {
       var dateFormat = d3.time.format('%Y-%m-%d');
-      d3.csv(this.model.getInputURL())
+      d3.csv(this.model.get('input_url'))
         .row(function(d) {
           return {
             Date: dateFormat.parse(d.Date),
