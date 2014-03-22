@@ -94,13 +94,28 @@ define([
 
       this.model.set('updated', datetimeFormat(new Date()));
 
-      this.model.save();
+      this.model.save({}, {
+        success: function(model, response, options) {
+          console.log('Model Save Success', response);
+          this.model.trigger('flashStatus', 'Model saved');
+        }.bind(this),
+        error: function(model, response, options) {
+          console.log('Model Save Failed', response);
+          this.model.trigger('flashStatus', 'Model save failed. See console (F12)');
+        }.bind(this)
+      });
     },
 
     resetModel: function() {
       this.model.fetch({
         success: function(model, response, options) {
           this.model.trigger('changeParam');
+          console.log('Model Reset Success', response);
+          this.model.trigger('flashStatus', 'Model reset');
+        }.bind(this),
+        error: function(model, response, options) {
+          console.log('Model Reset Failed', response);
+          this.model.trigger('flashStatus', 'Model reset failed. See console (F12)');
         }.bind(this)
       });
     },

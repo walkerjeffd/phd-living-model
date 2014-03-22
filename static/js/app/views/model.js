@@ -42,6 +42,7 @@ define([
       this.listenTo(this.model, 'setExtent', this.setExtent);
       this.listenTo(this.model, 'fetchInput', this.fetchInput);
       this.listenTo(this.model, 'showError', this.showError);
+      this.listenTo(this.model, 'flashStatus', this.flashStatus);
       // this.listenTo(this.model, 'all', function(e, model) { console.log('Model Event: ', e);});
       
       this.infoView = new InfoView({model: this.model, simModel: this.simModel, el: this.$('#model-info')});
@@ -50,6 +51,11 @@ define([
       this.tsView = new TimeseriesView({model: this.model, simModel: this.simModel, el: this.$('#chart-ts')});
       this.scatterView = new ScatterView({model: this.model, simModel: this.simModel, el: this.$('#chart-scatter')});
       this.summaryView = new SummaryView({model: this.model, simModel: this.simModel, el: this.$('#summary')});
+    },
+
+    flashStatus: function(message) {
+      console.log('flash');
+      this.$('#status').text(message).fadeIn(300).delay(3000).fadeOut(300);
     },
 
     showError: function(message, statusText, statusCode) {
