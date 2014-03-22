@@ -17,7 +17,7 @@
         <li><b>No. Missing</b>: {{ dataset.count_missing }}</li>
         <li><b>Datasets</b>
             <ul>
-                <li><a href="{{ url_for('ghcnd_dataset_raw_json', id=dataset.id) }}">Raw JSON</a></li>
+                <li><a href="{{ url_for('ghcnd_dataset_raw_txt', id=dataset.id) }}">Raw Text File</a></li>
                 <li><a href="{{ url_for('ghcnd_dataset_raw_csv', id=dataset.id) }}">Raw CSV</a></li>
                 <li><a href="{{ url_for('ghcnd_dataset_processed_csv', id=dataset.id) }}">Processed CSV</a></li>
             </ul>

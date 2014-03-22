@@ -13,6 +13,6 @@
 *.woff
 
 data/
-static/
+static-build/
 
 r.js
