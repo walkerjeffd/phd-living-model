@@ -19,7 +19,7 @@
             <ul>
                 <li><a href="{{ url_for('ghcnd_dataset_raw_json', id=dataset.id) }}">Raw JSON</a></li>
                 <li><a href="{{ url_for('ghcnd_dataset_raw_csv', id=dataset.id) }}">Raw CSV</a></li>
-                <li><a href="{{ url_for('ghcnd_dataset_clean_csv', id=dataset.id) }}">Clean CSV</a></li>
+                <li><a href="{{ url_for('ghcnd_dataset_processed_csv', id=dataset.id) }}">Processed CSV</a></li>
             </ul>
         </li>
         {% if dataset.watersheds %}
@@ -34,7 +34,7 @@
     </ul>
 
     <div class="btn-group">
-        <a class="btn btn-default" href="{{ url_for('ghcnd_dataset_update', id=dataset.id) }}">Update Data</a>
+        <a class="btn btn-default" href="{{ url_for('ghcnd_dataset_update_data', id=dataset.id) }}">Update Data</a>
         <a class="btn btn-default"href="{{ url_for('ghcnd_dataset_update_site', id=dataset.id) }}">Update Site</a>
     </div>
 {% else %}

@@ -1,0 +1,1 @@
+define(["underscore","backbone","app/models/model"],function(e,t,n){var r=t.Collection.extend({model:n,url:"/api/model",initialize:function(){console.log("ModelsCollection: initialize")},parse:function(e){return e.objects}});return r});

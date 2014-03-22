@@ -3,16 +3,19 @@ import sys
 import requests
 import json
 import pandas as pd
+import numpy as np
 import StringIO
 from ftplib import FTP
 from datetime import datetime
-from flask import Flask, render_template, redirect, url_for, flash, Response
+from flask import Flask, render_template, redirect, url_for, flash, Response, send_file
 from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext import admin
 from flask.ext.admin.contrib import sqla
 from flask.ext.restless import APIManager
 
 app = Flask(__name__)
+
+app.config['DEBUG'] = True
 
 # configure sessions
 app.config['SECRET_KEY'] = 'A0Zr98j/3yX R~XHH!jmN]LWX/,?RT'
@@ -28,10 +31,23 @@ app.config['SQLALCHEMY_ECHO'] = False
 db = SQLAlchemy(app)
 
 # configure admin
-admin = admin.Admin(app, 'Admin')
+admin = admin.Admin(app, 'Admin', base_template='admin-base.html')
 
 # configure API manager
 manager = APIManager(app, flask_sqlalchemy_db=db)
+
+# utilities
+def dataframe_count_missing(df, columns=None):
+    if columns is None:
+        missing = df.isnull().sum().sum()
+    else:
+        missing = df[columns].isnull().sum().sum()
+    return missing
+
+def dataframe_timespan(df):
+    start = df.index[0]
+    end = df.index[-1]
+    return (start.to_timestamp(), end.to_timestamp())
 
 # Models
 class User(db.Model):
@@ -49,7 +65,7 @@ class UsgsDataset(db.Model):
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
     created = db.Column(db.DateTime, default=db.func.now())
-    updated = db.Column(db.DateTime)
+    updated = db.Column(db.DateTime, default=db.func.now())
     drainage_area = db.Column(db.Float)
     start_date = db.Column(db.DateTime, default=datetime(2000,1,1), nullable=False)
     end_date = db.Column(db.DateTime)
@@ -58,13 +74,22 @@ class UsgsDataset(db.Model):
     def path(self):
         return os.path.join(app.config['DATA_FOLDER'], 'usgs', self.station_id)
 
-    def site_path(self):
+    def path_site(self):
         return os.path.join(self.path(), 'site.rdb')
 
-    def raw_json_path(self):
+    def path_raw_json(self):
         return os.path.join(self.path(), 'dv.json')
 
+    def path_raw_csv(self):
+        return os.path.join(self.path(), 'raw.csv')
+
+    def path_processed_csv(self):
+        return os.path.join(self.path(), 'processed.csv')
+
     def fetch_data(self):
+        if app.config['DEBUG']:
+            print 'Fetching USGS data, ' + self.station_id
+
         if not os.path.exists(self.path()):
             os.mkdir(self.path())
 
@@ -80,20 +105,24 @@ class UsgsDataset(db.Model):
         r = requests.get(url, params=params)
 
         if r.ok is False:
-            print 'Request Error %d: %s' % (r.status_code, r.reason)
-            return False
+            if app.config['DEBUG']:
+                print 'Request Error %d: %s' % (r.status_code, r.reason)
+            return None
 
-        with open(self.raw_json_path(), 'w') as f:
+        with open(self.path_raw_json(), 'w') as f:
             f.write(r.content)
-        
-        return True
+
+        self.updated = datetime.utcnow()
+        db.session.commit()
+
+        return r
 
     def get_raw_dataset(self):
-        if not os.path.exists(self.raw_json_path()):
-            self.fetch_data()
+        if app.config['DEBUG']:
+            print 'Getting USGS raw data, ' + self.station_id
 
-        raw_file = open(self.raw_json_path(), 'r')
-        data = json.load(raw_file)
+        with open(self.path_raw_json(), 'r') as f:
+            data = json.load(f)
 
         # get timeseries data        
         ts = data['value']['timeSeries'][0]
@@ -114,25 +143,64 @@ class UsgsDataset(db.Model):
 
         return df
 
-    def missing(self, df=None):
-        if (df is None):
-            df = self.get_raw_dataset()
-        missing = df['Flow_cfs'].isnull().sum()
-        return missing
+    def get_processed_dataset(self):
+        if app.config['DEBUG']:
+            print 'Getting USGS processed data, ' + self.station_id
 
-    def timespan(self, df=None):
-        if (df is None):
+        df = pd.read_csv(self.path_processed_csv(), index_col='Date', parse_dates=True)
+        df.index = df.index.to_period("D")
+
+        return df
+
+    def process_data(self, df=None):
+        if app.config['DEBUG']:
+            print 'Processing USGS data, ' + self.station_id
+
+        if df is None:
             df = self.get_raw_dataset()
-        start = df.index[0]
-        end = df.index[-1]
-        return (start.to_timestamp(), end.to_timestamp())
+
+        # trim missing values from end
+        last_date = df.index[df[['Flow_cfs']].any(axis=1)].to_datetime().max()
+        df = df[:last_date.isoformat()]
+
+        # interpolate missing values
+        df['Flow_cfs'] = pd.Series.interpolate(df['Flow_cfs'])
+
+        if not self.drainage_area is None:
+            df['Flow_in'] = df['Flow_cfs']/self.drainage_area*86400.*12./5280.**2
+        else:
+            df['Flow_in'] = np.nan
+
+        return df
+
+    def update_data(self, fetch=True):
+        if app.config['DEBUG'] is True:
+            print 'Updating USGS data, ' + self.station_id
+
+        if fetch is True:
+            self.fetch_data()
+
+        raw_df = self.get_raw_dataset()
+        raw_df.to_csv(self.path_raw_csv(), index=False, cols=['Date', 'Flow_cfs'])
+        self.count_missing = dataframe_count_missing(raw_df, columns=['Flow_cfs'])
+
+        # save raw, processed
+        processed_df = self.process_data(raw_df)
+        processed_df.to_json(self.path_processed_csv(), orient='records')
+        processed_df.to_csv(self.path_processed_csv(), index=False, cols=['Date', 'Flow_cfs', 'Flow_in'])
+
+        span = dataframe_timespan(processed_df)
+        self.start_date = span[0]
+        self.end_date = span[1]
+
+        db.session.commit()
 
     def fetch_site(self):
         if not os.path.exists(self.path()):
             os.mkdir(self.path())
 
-        if os.path.exists(self.site_path()):
-            return True
+        if app.config['DEBUG']:
+            print 'Fetching USGS site, ' + self.station_id
 
         url = 'http://waterservices.usgs.gov/nwis/site/'
         params = {'format': 'rdb', 'sites': self.station_id, 'siteOutput': 'expanded'}
@@ -140,96 +208,76 @@ class UsgsDataset(db.Model):
         r = requests.get(url, params=params)
 
         if r.ok is False:
-            print 'Request Error %d: %s' % (r.status_code, r.reason)
-            print r.url
-            return False
+            if app.config['DEBUG']:
+                print 'Request Error %d: %s' % (r.status_code, r.reason)
+                print r.url
+            return None
 
-        with open(self.site_path(), 'w') as f:
+        with open(self.path_site(), 'w') as f:
             f.write(r.content)
 
-        return True
+        return r.content.split('\n')
 
-    def get_site_dict(self):
-        with open(self.site_path(), 'r') as f:
-            lines = [line for line in f if line[0] != '#']
-        
-        header = [item.strip() for item in lines[0].split('\t')]
-        row = [item.strip() for item in lines[2].split('\t')]
-        site_info = dict(zip(header, row))
-        return site_info
+    def load_site(self):
+        # load site info from site.rdb and return dict
+        if app.config['DEBUG']:
+            print 'Loading USGS site, ' + self.station_id
 
-    def get_clean_dataset(self):
-        df = self.get_raw_dataset()
-        df['Flow_cfs'] = pd.Series.interpolate(df['Flow_cfs'])
-        if self.drainage_area is None:
-            self.update_site()
-        df['Flow_in'] = df['Flow_cfs']/self.drainage_area*86400.*12./5280.**2
-        return df
+        if not os.path.exists(self.path_site()):
+            self.fetch_site()
 
-    def get_raw_json(self):
-        df = self.get_raw_dataset()
-        f = StringIO.StringIO()
-        df.to_json(f, orient='records')
-        return f.getvalue()
+        with open(self.path_site(), 'r') as f:
+            lines = [line for line in f if line[0] != '#' and len(line.strip()) > 0]
 
-    def get_raw_csv(self):
-        df = self.get_raw_dataset()
-        f = StringIO.StringIO()
-        df.to_csv(f, index=False, cols=['Date', 'Flow_cfs'])
-        return f.getvalue()
+        if len(lines) >= 3:
+            header = [item.strip() for item in lines[0].split('\t')]
+            row = [item.strip() for item in lines[2].split('\t')]
+            site_info = dict(zip(header, row))
+            return site_info
 
-    def get_clean_csv(self):
-        df = self.get_clean_dataset()
-        f = StringIO.StringIO()
-        df.to_csv(f, index=False, cols=['Date', 'Flow_cfs', 'Flow_in'])
-        return f.getvalue()
+        return None
 
     def update_site(self):
-        if self.fetch_site():
-            site_info = self.get_site_dict()
-            
-            drainage_area = site_info.get('contrib_drain_area_va')
-            if drainage_area == '':
-                drainage_area = site_info.get('drain_area_va')
-            if drainage_area != '':
-                self.drainage_area = float(drainage_area)
+        # Update site information
+        # 1 fetch data
+        # 2 convert rdb to dict
+        # 3 update attributes
+        if app.config['DEBUG']:
+            print 'Updating USGS site, ' + self.station_id
 
-            if not site_info.get('dec_lat_va') in [None, '']:
-                self.latitude = float(site_info.get('dec_lat_va'))
-            elif not site_info.get('lat_va') in [None, '']:
-                x = site_info.get('lat_va')
-                d = float(x[:2])
-                m = float(x[2:4])
-                s = float(x[4:])
-                self.latitude = d + (m + s/60.)/60.
+        site_info = self.load_site()
+        
+        if site_info is None:
+            print 'Could not load site info'
+            return
 
-            if not site_info.get('dec_long_va') in [None, '']:
-                self.longitude = float(site_info.get('dec_long_va'))
-            elif not site_info.get('long_va') in [None, '']:
-                x = site_info.get('long_va')
-                d = -float(x[:3])
-                m = float(x[3:5])
-                s = float(x[4:])
-                self.longitude = d + (m + s/60.)/60.
+        drainage_area = site_info.get('contrib_drain_area_va')
+        if drainage_area == '':
+            drainage_area = site_info.get('drain_area_va')
+        if drainage_area != '':
+            self.drainage_area = float(drainage_area)
 
-            self.name = site_info.get('station_nm').upper()
+        if not site_info.get('dec_lat_va') in [None, '']:
+            self.latitude = float(site_info.get('dec_lat_va'))
+        elif not site_info.get('lat_va') in [None, '']:
+            x = site_info.get('lat_va')
+            d = float(x[:2])
+            m = float(x[2:4])
+            s = float(x[4:])
+            self.latitude = d + (m + s/60.)/60.
 
-            db.session.commit()
-            return True
-        return False
+        if not site_info.get('dec_long_va') in [None, '']:
+            self.longitude = float(site_info.get('dec_long_va'))
+        elif not site_info.get('long_va') in [None, '']:
+            x = site_info.get('long_va')
+            d = -float(x[:3])
+            m = float(x[3:5])
+            s = float(x[4:])
+            self.longitude = d + (m + s/60.)/60.
 
-    def update(self):
-        if self.fetch_data():
-            self.updated = db.func.now()
-            df = self.get_raw_dataset()
-            span = self.timespan(df)
-            self.start_date = span[0]
-            self.end_date = span[1]
-            self.count_missing = self.missing(df)
-            db.session.commit()
-            return True
-        else:
-            return False
+        self.name = site_info.get('station_nm').upper()
+
+        db.session.commit()
 
     def __unicode__(self):
         return self.station_id
@@ -257,7 +305,7 @@ class GhcndDataset(db.Model):
     def path_site_list_csv(self):
         return os.path.join(app.config['DATA_FOLDER'], 'ghcnd', 'ghcnd-stations.csv')
 
-    def raw_dly_path(self):
+    def path_raw_data(self):
         return os.path.join(self.path(), 'data.dly')
 
     def fetch_data(self):
@@ -270,7 +318,7 @@ class GhcndDataset(db.Model):
 
         filename = self.station_id + ".dly"
         
-        ftp.retrbinary('RETR ' + filename, open(self.raw_dly_path(), 'wb').write)
+        ftp.retrbinary('RETR ' + filename, open(self.path_raw_data(), 'wb').write)
         
         self.updated = datetime.utcnow()
         db.session.commit()
@@ -326,7 +374,7 @@ class GhcndDataset(db.Model):
         db.session.commit()
 
     def get_raw_dataset(self):
-        if not os.path.exists(self.raw_dly_path()):
+        if not os.path.exists(self.path_raw_data()):
             self.fetch_data()
 
         elements=["PRCP","TMIN","TMAX"]
@@ -358,7 +406,7 @@ class GhcndDataset(db.Model):
 
         colspecs = [(start, end) for name, start, end, converter in columns]
 
-        station_data = pd.read_fwf(self.raw_dly_path(), colspecs=colspecs, header=None, index_col=None, na_values=[-9999])
+        station_data = pd.read_fwf(self.path_raw_data(), colspecs=colspecs, header=None, index_col=None, na_values=[-9999])
         station_data.columns = [name for name, start, end, converter in columns]
 
         dfs = {}
@@ -413,7 +461,7 @@ class GhcndDataset(db.Model):
 
         return df
 
-    def get_clean_dataset(self, df=None):
+    def get_processed_dataset(self, df=None):
         if df is None:
             df = self.get_raw_dataset()
         df['Precip_in'] = df['Precip_in'].fillna(value=0)
@@ -448,20 +496,19 @@ class GhcndDataset(db.Model):
         df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
         return f.getvalue()
 
-    def get_clean_csv(self, df=None):
+    def get_processed_csv(self, df=None):
         if df is None:
-            df = self.get_clean_dataset()
+            df = self.get_processed_dataset()
         f = StringIO.StringIO()
         df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
         return f.getvalue()
 
-    def update(self):
+    def update_data(self):
         if self.fetch_data():
-            self.updated = db.func.now()
             df = self.get_raw_dataset()
             span = self.timespan(df)
             self.end_date = span[1]
-            self.count_missing = self.missing(df)
+            self.count_missing = dataframe_count_missing(df)
             db.session.commit()
             return True
         return False
@@ -485,16 +532,29 @@ class Watershed(db.Model):
     usgs = db.relationship(UsgsDataset, backref="watersheds")
     ghcnd = db.relationship(GhcndDataset, backref="watersheds")
 
+    def path(self):
+        return os.path.join(app.config['DATA_FOLDER'], 'watershed', str(self.id))
+    
+    def path_dataset_json(self):
+        return os.path.join(self.path(), 'dataset.json')
+
+    def path_dataset_csv(self):
+        return os.path.join(self.path(), 'dataset.csv')
+
     def get_dataset(self):
+        if app.config['DEBUG'] is True:
+            print 'Getting Watershed dataset, ' + str(self.id)
+
         start = self.start_date.isoformat()
         end = self.end_date.isoformat()
 
-        usgs = self.usgs.get_clean_dataset()
+        usgs = self.usgs.get_processed_dataset()
         usgs = usgs[start:end]
-        ghcnd = self.ghcnd.get_clean_dataset()
+        ghcnd = self.ghcnd.get_processed_dataset()
         ghcnd = ghcnd[start:end]
         df = usgs[['Flow_in']].merge(ghcnd[['Precip_in', 'Tmax_degC', 'Tmin_degC']], how='outer', left_index=True, right_index=True)
         df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
+
         return df
 
     def timespan(self, df=None):
@@ -505,9 +565,18 @@ class Watershed(db.Model):
         return (start.to_timestamp(), end.to_timestamp())
     
     def update(self):
-        self.usgs.update()
-        self.ghcnd.update()
+        if not os.path.exists(self.path()):
+            os.mkdir(self.path())
+
+        self.usgs.update_data()
+        self.ghcnd.update_data()
         self.end_date = min(self.usgs.end_date, self.ghcnd.end_date)
+        
+        df = self.get_dataset()
+        df.to_json(self.path_dataset_json(), orient='records')
+        df.to_csv(self.path_dataset_csv(), index=False, cols=['Date', 'Precip_in', 'Tmax_degC', 'Tmin_degC', 'Flow_in'])
+
+        db.session.commit()
 
     def get_dataset_json(self):
         df = self.get_dataset()
@@ -537,8 +606,8 @@ class Model(db.Model):
     updated = db.Column(db.DateTime)
     cal_start = db.Column(db.DateTime)
     cal_end = db.Column(db.DateTime)
-    por_start = db.Column(db.DateTime)
-    por_end = db.Column(db.DateTime)
+    last_start = db.Column(db.DateTime)
+    last_end = db.Column(db.DateTime)
     watershed_id = db.Column(db.Integer(), db.ForeignKey(Watershed.id))
     watershed = db.relationship(Watershed, backref='models')
 
@@ -568,13 +637,13 @@ def usgs_dataset_list():
 
 @app.route('/datasets/usgs/<int:id>')
 def usgs_dataset_detail(id):
-    usgs_dataset = UsgsDataset.query.get(id)
+    usgs_dataset = UsgsDataset.query.get_or_404(id)
     return render_template('usgs_dataset_detail.html', dataset=usgs_dataset)
 
-@app.route('/datasets/usgs/<int:id>/update')
-def usgs_dataset_update(id):
-    usgs_dataset = UsgsDataset.query.get(id)
-    if usgs_dataset.update() is True:
+@app.route('/datasets/usgs/<int:id>/update_data')
+def usgs_dataset_update_data(id):
+    usgs_dataset = UsgsDataset.query.get_or_404(id)
+    if usgs_dataset.update_data() is True:
         flash('Update successful')
         return redirect(url_for('usgs_dataset_detail', id=id))
     else:
@@ -583,24 +652,24 @@ def usgs_dataset_update(id):
 
 @app.route('/datasets/usgs/<int:id>/update_site')
 def usgs_dataset_update_site(id):
-    usgs_dataset = UsgsDataset.query.get(id)
+    usgs_dataset = UsgsDataset.query.get_or_404(id)
     usgs_dataset.update_site()
     return redirect(url_for('usgs_dataset_detail', id=id))
 
 @app.route('/datasets/usgs/<int:id>/raw.json')
 def usgs_dataset_raw_json(id):
-    usgs_dataset = UsgsDataset.query.get(id)
-    return Response(usgs_dataset.get_raw_json(), mimetype='application/json')
+    usgs_dataset = UsgsDataset.query.get_or_404(id)
+    return send_file(usgs_dataset.path_raw_json(), mimetype='application/json')
 
 @app.route('/datasets/usgs/<int:id>/raw.csv')
 def usgs_dataset_raw_csv(id):
-    usgs_dataset = UsgsDataset.query.get(id)
-    return Response(usgs_dataset.get_raw_csv(), mimetype='text/csv')
+    usgs_dataset = UsgsDataset.query.get_or_404(id)
+    return send_file(usgs_dataset.path_raw_csv(), mimetype='text/csv')
 
-@app.route('/datasets/usgs/<int:id>/clean.csv')
-def usgs_dataset_clean_csv(id):
-    usgs_dataset = UsgsDataset.query.get(id)
-    return Response(usgs_dataset.get_clean_csv(), mimetype='text/csv')
+@app.route('/datasets/usgs/<int:id>/processed.csv')
+def usgs_dataset_processed_csv(id):
+    usgs_dataset = UsgsDataset.query.get_or_404(id)
+    return send_file(usgs_dataset.path_processed_csv(), mimetype='text/csv')
 
 @app.route('/datasets/ghcnd')
 def ghcnd_dataset_list():
@@ -609,8 +678,8 @@ def ghcnd_dataset_list():
 
 @app.route('/datasets/ghcnd/<int:id>/update')
 def ghcnd_dataset_update(id):
-    ghcnd_dataset = GhcndDataset.query.get(id)
-    if ghcnd_dataset.update() is True:
+    ghcnd_dataset = GhcndDataset.query.get_or_404(id)
+    if ghcnd_dataset.update_data() is True:
         flash('Update successful')
         return redirect(url_for('ghcnd_dataset_detail', id=id))
     else:
@@ -619,29 +688,29 @@ def ghcnd_dataset_update(id):
 
 @app.route('/datasets/ghcnd/<int:id>/update_site')
 def ghcnd_dataset_update_site(id):
-    ghcnd_dataset = GhcndDataset.query.get(id)
+    ghcnd_dataset = GhcndDataset.query.get_or_404(id)
     ghcnd_dataset.update_site()
     return redirect(url_for('ghcnd_dataset_detail', id=id))
 
 @app.route('/datasets/ghcnd/<int:id>')
 def ghcnd_dataset_detail(id):
-    ghcnd_dataset = GhcndDataset.query.get(id)
+    ghcnd_dataset = GhcndDataset.query.get_or_404(id)
     return render_template('ghcnd_dataset_detail.html', dataset=ghcnd_dataset)
 
 @app.route('/datasets/ghcnd/<int:id>/raw.json')
 def ghcnd_dataset_raw_json(id):
-    ghcnd_dataset = GhcndDataset.query.get(id)
+    ghcnd_dataset = GhcndDataset.query.get_or_404(id)
     return Response(ghcnd_dataset.get_raw_json(), mimetype='application/json')
 
 @app.route('/datasets/ghcnd/<int:id>/raw.csv')
 def ghcnd_dataset_raw_csv(id):
-    ghcnd_dataset = GhcndDataset.query.get(id)
+    ghcnd_dataset = GhcndDataset.query.get_or_404(id)
     return Response(ghcnd_dataset.get_raw_csv(), mimetype='text/csv')
 
-@app.route('/datasets/ghcnd/<int:id>/clean.csv')
-def ghcnd_dataset_clean_csv(id):
-    ghcnd_dataset = GhcndDataset.query.get(id)
-    return Response(ghcnd_dataset.get_clean_csv(), mimetype='text/csv')
+@app.route('/datasets/ghcnd/<int:id>/processed.csv')
+def ghcnd_dataset_processed_csv(id):
+    ghcnd_dataset = GhcndDataset.query.get_or_404(id)
+    return Response(ghcnd_dataset.get_processed_csv(), mimetype='text/csv')
 
 @app.route('/datasets/watersheds')
 def watershed_list():
@@ -650,25 +719,25 @@ def watershed_list():
 
 @app.route('/datasets/watersheds/<int:id>')
 def watershed_detail(id):
-    watershed = Watershed.query.get(id)
+    watershed = Watershed.query.get_or_404(id)
     return render_template('watershed_detail.html', watershed=watershed)
 
 @app.route('/datasets/watersheds/<int:id>/update')
 def watershed_update(id):
-    watershed = Watershed.query.get(id)
+    watershed = Watershed.query.get_or_404(id)
     watershed.update()
     flash('Update successful')
     return redirect(url_for('watershed_detail', id=id))
 
 @app.route('/datasets/watersheds/<int:id>/dataset.json')
 def watershed_dataset_json(id):
-    watershed = Watershed.query.get(id)
-    return Response(watershed.get_dataset_json(), mimetype='text/csv')
+    watershed = Watershed.query.get_or_404(id)
+    return send_file(watershed.path_dataset_json(), mimetype='application/json')
 
 @app.route('/datasets/watersheds/<int:id>/dataset.csv')
 def watershed_dataset_csv(id):
-    watershed = Watershed.query.get(id)
-    return Response(watershed.get_dataset_csv(), mimetype='text/csv')
+    watershed = Watershed.query.get_or_404(id)
+    return send_file(watershed.path_dataset_csv(), mimetype='text/csv')
 
 # admin views
 class USGSAdminView(sqla.ModelView):
@@ -677,7 +746,7 @@ class USGSAdminView(sqla.ModelView):
     def after_model_change(self, form, model, is_created):
         if is_created is True:
             model.update_site()
-            model.update()
+            model.update_data()
 
 class GHCNDAdminView(sqla.ModelView):
     form_create_rules = ('station_id', 'start_date')
@@ -685,7 +754,7 @@ class GHCNDAdminView(sqla.ModelView):
     def after_model_change(self, form, model, is_created):
         if is_created is True:
             model.update_site()
-            model.update()
+            model.update_data()
 
 class WatershedAdminView(sqla.ModelView):
     form_create_rules = ('name', 'start_date', 'usgs', 'ghcnd')
@@ -707,6 +776,33 @@ admin.add_view(USGSAdminView(UsgsDataset, db.session))
 admin.add_view(GHCNDAdminView(GhcndDataset, db.session))
 
 # initialize
+def create_watershed(name, usgs_station, ghcnd_station):
+    if app.config['DEBUG'] is True:
+        print 'Creating Watershed: %s, %s, %s' % (name, usgs_station, ghcnd_station)
+
+    usgs_dataset = UsgsDataset()
+    usgs_dataset.station_id = usgs_station
+    db.session.add(usgs_dataset)
+    usgs_dataset.update_site()
+
+    ghcnd_dataset = GhcndDataset()
+    ghcnd_dataset.station_id = ghcnd_station
+    db.session.add(ghcnd_dataset)
+    ghcnd_dataset.update_site()
+
+    watershed = Watershed()
+    watershed.name = name
+    watershed.latitude = usgs_dataset.latitude
+    watershed.usgs = usgs_dataset
+    watershed.ghcnd = ghcnd_dataset
+    db.session.add(watershed)
+
+    db.session.commit()
+
+    watershed.update()
+    return watershed
+
+
 def build_sample_db():
     print 'Building sample db'
     users = [('walker.jeff.d@gmail.com', 'password')]
@@ -724,36 +820,16 @@ def build_sample_db():
         db.session.add(user)
 
     for name, usgs_station, ghcnd_station in watersheds:
-        usgs_dataset = UsgsDataset()
-        usgs_dataset.station_id = usgs_station
-        db.session.add(usgs_dataset)
-        usgs_dataset.update_site()
+        watershed = create_watershed(name, usgs_station, ghcnd_station)
 
-        ghcnd_dataset = GhcndDataset()
-        ghcnd_dataset.station_id = ghcnd_station
-        db.session.add(ghcnd_dataset)
-        ghcnd_dataset.update_site()
-
-        watershed = Watershed()
-        watershed.name = name
-        watershed.latitude = usgs_dataset.latitude
-        watershed.usgs = usgs_dataset
-        watershed.ghcnd = ghcnd_dataset
-        db.session.add(watershed)
-        watershed.update()
-
-        model = Model()
-        model.name = watershed.name
-        model.watershed = watershed
+        model = Model(name=name, watershed=watershed)
         db.session.add(model)
     
     db.session.commit()
     return
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == 'clean':
+    if len(sys.argv) > 1 and sys.argv[1] == 'db':
         build_sample_db()
-    elif not os.path.exists(app.config['DATABASE_PATH']):
-        build_sample_db()
-
-    app.run(debug=True)
+    else:
+        app.run(debug=True)
