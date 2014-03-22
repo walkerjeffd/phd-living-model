@@ -60,7 +60,7 @@ class User(db.Model):
 
 class UsgsDataset(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    station_id = db.Column(db.String(120), nullable=False)
+    station_id = db.Column(db.String(120), unique=True, nullable=False)
     name = db.Column(db.String(200))
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
@@ -117,7 +117,7 @@ class UsgsDataset(db.Model):
 
         return r
 
-    def get_raw_dataset(self):
+    def load_raw_data(self):
         if app.config['DEBUG']:
             print 'Getting USGS raw data, ' + self.station_id
 
@@ -143,7 +143,7 @@ class UsgsDataset(db.Model):
 
         return df
 
-    def get_processed_dataset(self):
+    def load_processed_data(self):
         if app.config['DEBUG']:
             print 'Getting USGS processed data, ' + self.station_id
 
@@ -157,7 +157,7 @@ class UsgsDataset(db.Model):
             print 'Processing USGS data, ' + self.station_id
 
         if df is None:
-            df = self.get_raw_dataset()
+            df = self.load_raw_data()
 
         # trim missing values from end
         last_date = df.index[df[['Flow_cfs']].any(axis=1)].to_datetime().max()
@@ -180,13 +180,11 @@ class UsgsDataset(db.Model):
         if fetch is True:
             self.fetch_data()
 
-        raw_df = self.get_raw_dataset()
+        raw_df = self.load_raw_data()
         raw_df.to_csv(self.path_raw_csv(), index=False, cols=['Date', 'Flow_cfs'])
         self.count_missing = dataframe_count_missing(raw_df, columns=['Flow_cfs'])
 
-        # save raw, processed
         processed_df = self.process_data(raw_df)
-        processed_df.to_json(self.path_processed_csv(), orient='records')
         processed_df.to_csv(self.path_processed_csv(), index=False, cols=['Date', 'Flow_cfs', 'Flow_in'])
 
         span = dataframe_timespan(processed_df)
@@ -286,14 +284,13 @@ class UsgsDataset(db.Model):
     def __unicode__(self):
         return self.station_id
 
+
 class GhcndDataset(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    station_id = db.Column(db.String(120), nullable=False)
+    station_id = db.Column(db.String(120), unique=True, nullable=False)
     name = db.Column(db.String(200))
     latitude = db.Column(db.Float)
     longitude = db.Column(db.Float)
-    created = db.Column(db.DateTime, default=db.func.now())
-    updated = db.Column(db.DateTime)
     start_date = db.Column(db.DateTime, default=datetime(2000,1,1), nullable=False)
     end_date = db.Column(db.DateTime)
     count_missing = db.Column(db.Integer)
@@ -380,7 +377,7 @@ class GhcndDataset(db.Model):
         site_list.to_csv(self.path_site_list_csv())
         return True
 
-    def get_site_list(self):
+    def load_site(self):
         if app.config['DEBUG']:
             print 'Getting GHCND sites, ' + self.station_id
 
@@ -388,9 +385,11 @@ class GhcndDataset(db.Model):
             self.parse_site_list()
 
         site_list = pd.read_csv(self.path_site_list_csv())
-        return site_list
+        site = site_list[site_list['ID'] == self.station_id].to_dict(outtype='list')
 
-    def get_raw_dataset(self):
+        return site
+
+    def load_raw_data(self):
         if app.config['DEBUG']:
             print 'Getting GHCND raw data, ' + self.station_id
 
@@ -481,7 +480,7 @@ class GhcndDataset(db.Model):
 
         return df
 
-    def get_processed_dataset(self):
+    def load_processed_data(self):
         if app.config['DEBUG']:
             print 'Getting GHCND processed data, ' + self.station_id
 
@@ -495,7 +494,7 @@ class GhcndDataset(db.Model):
             print 'Processing GHCND data, ' + self.station_id
 
         if df is None:
-            df = self.get_raw_dataset()
+            df = self.load_raw_data()
 
         # trim missing values from end
         last_date = df.index[df[['Precip_in', 'Tmin_degC', 'Tmax_degC']].any(axis=1)].to_datetime().max()
@@ -509,27 +508,6 @@ class GhcndDataset(db.Model):
         
         return df
 
-    def get_raw_json(self, df=None):
-        if df is None:
-            df = self.get_raw_dataset()
-        f = StringIO.StringIO()
-        df.to_json(f, orient='records')
-        return f.getvalue()
-
-    def get_raw_csv(self, df=None):
-        if df is None:
-            df = self.get_raw_dataset()
-        f = StringIO.StringIO()
-        df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
-        return f.getvalue()
-
-    def get_processed_csv(self, df=None):
-        if df is None:
-            df = self.get_processed_dataset()
-        f = StringIO.StringIO()
-        df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
-        return f.getvalue()
-
     def update_data(self, fetch=True):
         if app.config['DEBUG']:
             print 'Updating GHCND data, ' + self.station_id
@@ -537,7 +515,7 @@ class GhcndDataset(db.Model):
         if fetch is True:
             self.fetch_data()
 
-        raw_df = self.get_raw_dataset()
+        raw_df = self.load_raw_data()
         raw_df.to_csv(self.path_raw_csv(), index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
         self.count_missing = dataframe_count_missing(raw_df, columns=['Precip_in', 'Tmin_degC', 'Tmax_degC'])
 
@@ -556,8 +534,8 @@ class GhcndDataset(db.Model):
         if app.config['DEBUG']:
             print 'Updating GHCND site, ' + self.station_id
 
-        site_list = self.get_site_list()
-        site = site_list[site_list['ID'] == self.station_id].to_dict(outtype='list')
+        site = self.load_site()
+        
         self.latitude = float(site['LATITUDE'][0])
         self.longitude = float(site['LONGITUDE'][0])
         self.name = site['NAME'][0]
@@ -589,29 +567,23 @@ class Watershed(db.Model):
     def path_dataset_csv(self):
         return os.path.join(self.path(), 'dataset.csv')
 
-    def get_dataset(self):
+    def merge_dataset(self):
         if app.config['DEBUG'] is True:
             print 'Getting Watershed dataset, ' + str(self.id)
 
         start = self.start_date.isoformat()
         end = self.end_date.isoformat()
 
-        usgs = self.usgs.get_processed_dataset()
+        usgs = self.usgs.load_processed_data()
         usgs = usgs[start:end]
-        ghcnd = self.ghcnd.get_processed_dataset()
+        ghcnd = self.ghcnd.load_processed_data()
         ghcnd = ghcnd[start:end]
+
         df = usgs[['Flow_in']].merge(ghcnd[['Precip_in', 'Tmax_degC', 'Tmin_degC']], how='outer', left_index=True, right_index=True)
         df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
 
         return df
 
-    def timespan(self, df=None):
-        if df is None:
-            df = self.get_dataset()
-        start = df.index[0]
-        end = df.index[-1]
-        return (start.to_timestamp(), end.to_timestamp())
-    
     def update(self, fetch=True):
         if not os.path.exists(self.path()):
             os.mkdir(self.path())
@@ -620,23 +592,11 @@ class Watershed(db.Model):
         self.ghcnd.update_data(fetch=fetch)
         self.end_date = min(self.usgs.end_date, self.ghcnd.end_date)
         
-        df = self.get_dataset()
-        df.to_json(self.path_dataset_json(), orient='records')
-        df.to_csv(self.path_dataset_csv(), index=False, cols=['Date', 'Precip_in', 'Tmax_degC', 'Tmin_degC', 'Flow_in'])
-
         db.session.commit()
 
-    def get_dataset_json(self):
-        df = self.get_dataset()
-        f = StringIO.StringIO()
-        df.to_json(f, orient='records')
-        return f.getvalue()
-
-    def get_dataset_csv(self):
-        df = self.get_dataset()
-        f = StringIO.StringIO()
-        df.to_csv(f, index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC', 'Flow_in'])
-        return f.getvalue()
+        df = self.merge_dataset()
+        df.to_json(self.path_dataset_json(), orient='records')
+        df.to_csv(self.path_dataset_csv(), index=False, cols=['Date', 'Precip_in', 'Tmax_degC', 'Tmin_degC', 'Flow_in'])
 
     def __unicode__(self):
         return self.name
