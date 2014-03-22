@@ -771,6 +771,10 @@ def watershed_dataset_csv(id):
 # admin views
 class USGSAdminView(sqla.ModelView):
     form_create_rules = ('station_id', 'start_date')
+    
+    column_type_formatters = {
+        datetime: lambda view, value: value.date().isoformat()
+    }
 
     def after_model_change(self, form, model, is_created):
         if is_created is True:
@@ -780,6 +784,10 @@ class USGSAdminView(sqla.ModelView):
 class GHCNDAdminView(sqla.ModelView):
     form_create_rules = ('station_id', 'start_date')
 
+    column_type_formatters = {
+        datetime: lambda view, value: value.date().isoformat()
+    }
+
     def after_model_change(self, form, model, is_created):
         if is_created is True:
             model.update_site()
@@ -787,6 +795,12 @@ class GHCNDAdminView(sqla.ModelView):
 
 class WatershedAdminView(sqla.ModelView):
     form_create_rules = ('name', 'start_date', 'usgs', 'ghcnd')
+
+    column_list = ('name', 'start_date', 'end_date', 'latitude', 'usgs', 'ghcnd')
+    
+    column_type_formatters = {
+        datetime: lambda view, value: value.date().isoformat()
+    }
 
     def after_model_change(self, form, model, is_created):
         print "CREATED"
@@ -798,6 +812,11 @@ class WatershedAdminView(sqla.ModelView):
 
 class ModelAdminView(sqla.ModelView):
     form_create_rules = ('name', 'watershed')
+    
+    column_type_formatters = {
+        datetime: lambda view, value: value.date().isoformat()
+    }
+
 
 # admin.add_view(sqla.ModelView(User, db.session))
 admin.add_view(ModelAdminView(Model, db.session))
