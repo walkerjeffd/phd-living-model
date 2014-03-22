@@ -627,7 +627,12 @@ class Model(db.Model):
         return self.name
 
 # api endpoints
-model_blueprint = manager.create_api(Model, methods=['GET', 'PUT'], include_methods=['input_url'])
+def put_single_preprocessor(data=None, **kw):
+    # remove input_url from put data, causes error
+    data.pop('input_url')
+    return data
+
+model_blueprint = manager.create_api(Model, methods=['GET', 'PUT'], include_methods=['input_url'], preprocessors={'PUT_SINGLE': [put_single_preprocessor]})
 
 # routes
 @app.route('/')
