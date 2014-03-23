@@ -4,13 +4,13 @@ import requests
 import json
 import pandas as pd
 import numpy as np
-import StringIO
 from ftplib import FTP
 from datetime import datetime
-from flask import Flask, render_template, redirect, url_for, flash, Response, send_file
+from flask import Flask, render_template, redirect, url_for, flash, send_file
 from flask.ext.sqlalchemy import SQLAlchemy
 from flask.ext import admin
 from flask.ext.admin.contrib import sqla
+from flask.ext.admin.model import typefmt
 from flask.ext.restless import APIManager
 
 app = Flask(__name__)
@@ -769,12 +769,15 @@ def watershed_dataset_csv(id):
     return send_file(watershed.path_dataset_csv(), mimetype='text/csv')
 
 # admin views
+FORMATTERS = dict(typefmt.BASE_FORMATTERS)
+FORMATTERS.update({
+        datetime: lambda view, value: value.date().isoformat()
+    })
+
 class USGSAdminView(sqla.ModelView):
     form_create_rules = ('station_id', 'start_date')
     
-    column_type_formatters = {
-        datetime: lambda view, value: value.date().isoformat()
-    }
+    column_type_formatters = FORMATTERS
 
     def after_model_change(self, form, model, is_created):
         if is_created is True:
@@ -784,9 +787,7 @@ class USGSAdminView(sqla.ModelView):
 class GHCNDAdminView(sqla.ModelView):
     form_create_rules = ('station_id', 'start_date')
 
-    column_type_formatters = {
-        datetime: lambda view, value: value.date().isoformat()
-    }
+    column_type_formatters = FORMATTERS
 
     def after_model_change(self, form, model, is_created):
         if is_created is True:
@@ -798,9 +799,7 @@ class WatershedAdminView(sqla.ModelView):
 
     column_list = ('name', 'start_date', 'end_date', 'latitude', 'usgs', 'ghcnd')
     
-    column_type_formatters = {
-        datetime: lambda view, value: value.date().isoformat()
-    }
+    column_type_formatters = FORMATTERS
 
     def after_model_change(self, form, model, is_created):
         print "CREATED"
@@ -813,9 +812,7 @@ class WatershedAdminView(sqla.ModelView):
 class ModelAdminView(sqla.ModelView):
     form_create_rules = ('name', 'watershed')
     
-    column_type_formatters = {
-        datetime: lambda view, value: value.date().isoformat()
-    }
+    column_type_formatters = FORMATTERS
 
 
 # admin.add_view(sqla.ModelView(User, db.session))
