@@ -4,6 +4,7 @@ import requests
 import json
 import pandas as pd
 import numpy as np
+import StringIO
 from ftplib import FTP
 from datetime import datetime
 from flask import Flask, render_template, redirect, url_for, flash, send_file
@@ -86,6 +87,9 @@ class UsgsDataset(db.Model):
     def path_processed_csv(self):
         return os.path.join(self.path(), 'processed.csv')
 
+    def path_dataset_json(self):
+        return os.path.join(self.path(), 'dataset.json')
+
     def fetch_data(self):
         if app.config['DEBUG']:
             print 'Fetching USGS data, ' + self.station_id
@@ -136,10 +140,18 @@ class UsgsDataset(db.Model):
         df = pd.DataFrame({'Flow_cfs': values},
                           index=pd.to_datetime(dates).to_period("D"))
         df.index = df.index.rename('Date')
+
+        # resample
+        df = df.resample('D')
+
         df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
 
         # replace missing values
         df['Flow_cfs'][df['Flow_cfs']==nodatavalue] = None
+
+        # trim missing values from end
+        last_date = df.index[df[['Flow_cfs']].any(axis=1)].to_datetime().max()
+        df = df[:last_date.isoformat()]
 
         return df
 
@@ -158,10 +170,6 @@ class UsgsDataset(db.Model):
 
         if df is None:
             df = self.load_raw_data()
-
-        # trim missing values from end
-        last_date = df.index[df[['Flow_cfs']].any(axis=1)].to_datetime().max()
-        df = df[:last_date.isoformat()]
 
         # interpolate missing values
         df['Flow_cfs'] = pd.Series.interpolate(df['Flow_cfs'])
@@ -184,8 +192,32 @@ class UsgsDataset(db.Model):
         raw_df.to_csv(self.path_raw_csv(), index=False, cols=['Date', 'Flow_cfs'])
         self.count_missing = dataframe_count_missing(raw_df, columns=['Flow_cfs'])
 
-        processed_df = self.process_data(raw_df)
+        processed_df = self.process_data(raw_df.copy())
         processed_df.to_csv(self.path_processed_csv(), index=False, cols=['Date', 'Flow_cfs', 'Flow_in'])
+        processed_json = StringIO.StringIO()
+        processed_df[['Date', 'Flow_cfs']].to_json(processed_json, orient='records')
+
+        fill_df = pd.DataFrame(processed_df['Flow_cfs'][raw_df['Flow_cfs'].isnull() == True])
+        fill_df['Date'] = fill_df.index.map(lambda x: x.to_timestamp().date().isoformat())
+        fill_json = StringIO.StringIO()
+        fill_df[['Date', 'Flow_cfs']].to_json(fill_json, orient='records')
+
+        if self.end_date is None:
+            prev_end = self.start_date.isoformat()
+        else:
+            prev_end = self.end_date.isoformat()
+        update_df = processed_df[prev_end:]
+        if len(update_df) > 0:
+            update_df = update_df[1:]
+        update_json = StringIO.StringIO()
+        update_df[['Date', 'Flow_cfs']].to_json(update_json, orient='records')
+
+        dataset_dict = {'Flow_cfs': {}}
+        dataset_dict['Flow_cfs']['update'] = json.loads(update_json.getvalue())
+        dataset_dict['Flow_cfs']['processed'] = json.loads(processed_json.getvalue())
+        dataset_dict['Flow_cfs']['fill'] = json.loads(fill_json.getvalue())
+        with open(self.path_dataset_json(), 'w') as f:
+            f.write(json.dumps(dataset_dict))
 
         span = dataframe_timespan(processed_df)
         self.start_date = span[0]
@@ -317,6 +349,9 @@ class GhcndDataset(db.Model):
 
     def path_processed_csv(self):
         return os.path.join(self.path(), 'processed.csv')
+
+    def path_dataset_json(self):
+        return os.path.join(self.path(), 'dataset.json')
 
     def fetch_data(self):
         if app.config['DEBUG']:
@@ -519,9 +554,37 @@ class GhcndDataset(db.Model):
         raw_df.to_csv(self.path_raw_csv(), index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
         self.count_missing = dataframe_count_missing(raw_df, columns=['Precip_in', 'Tmin_degC', 'Tmax_degC'])
 
-        processed_df = self.process_data(raw_df)
-        processed_df.to_json(self.path_processed_csv(), orient='records')
+        processed_df = self.process_data(raw_df.copy())
         processed_df.to_csv(self.path_processed_csv(), index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
+
+        fill_dict = {}
+        for variable in ['Precip_in', 'Tmin_degC', 'Tmax_degC']:
+            processed_json = StringIO.StringIO()
+            processed_df[['Date', variable]].to_json(processed_json, orient='records')
+
+            fill_df = pd.DataFrame(processed_df[variable][raw_df[variable].isnull() == True])
+            fill_df['Date'] = fill_df.index.map(lambda x: x.to_timestamp().date().isoformat())
+            fill_json = StringIO.StringIO()
+            fill_df[['Date', variable]].to_json(fill_json, orient='records')
+
+            if self.end_date is None:
+                prev_end = self.start_date.isoformat()
+            else:
+                prev_end = self.end_date.isoformat()
+            update_df = processed_df[prev_end:]
+            if len(update_df) > 0:
+                update_df = update_df[1:]
+            update_json = StringIO.StringIO()
+            update_df[['Date', variable]].to_json(update_json, orient='records')
+
+            fill_dict[variable] = {}
+            fill_dict[variable]['update'] = json.loads(update_json.getvalue())
+            fill_dict[variable]['processed'] = json.loads(processed_json.getvalue())
+            fill_dict[variable]['fill'] = json.loads(fill_json.getvalue())
+
+
+        with open(self.path_dataset_json(), 'w') as f:
+            f.write(json.dumps(fill_dict))
 
         span = dataframe_timespan(processed_df)
         self.start_date = span[0]
@@ -529,7 +592,7 @@ class GhcndDataset(db.Model):
         db.session.commit()
 
         return True
-        
+
     def update_site(self):
         if app.config['DEBUG']:
             print 'Updating GHCND site, ' + self.station_id
@@ -693,6 +756,11 @@ def usgs_dataset_processed_csv(id):
     usgs_dataset = UsgsDataset.query.get_or_404(id)
     return send_file(usgs_dataset.path_processed_csv(), mimetype='text/csv')
 
+@app.route('/datasets/usgs/<int:id>/dataset.json')
+def usgs_dataset_dataset_json(id):
+    usgs_dataset = UsgsDataset.query.get_or_404(id)
+    return send_file(usgs_dataset.path_dataset_json(), mimetype='application/json')
+
 @app.route('/datasets/ghcnd')
 def ghcnd_dataset_list():
     ghcnd_datasets = GhcndDataset.query.all()
@@ -740,6 +808,11 @@ def ghcnd_dataset_raw_csv(id):
 def ghcnd_dataset_processed_csv(id):
     ghcnd_dataset = GhcndDataset.query.get_or_404(id)
     return send_file(ghcnd_dataset.path_processed_csv(), mimetype='text/csv')
+
+@app.route('/datasets/ghcnd/<int:id>/dataset.json')
+def ghcnd_dataset_dataset_json(id):
+    ghcnd_dataset = GhcndDataset.query.get_or_404(id)
+    return send_file(ghcnd_dataset.path_dataset_json(), mimetype='application/json')
 
 @app.route('/datasets/watersheds')
 def watershed_list():
@@ -853,10 +926,10 @@ def create_watershed(name, usgs_station, ghcnd_station):
 def build_sample_db():
     print 'Building sample db'
     users = [('walker.jeff.d@gmail.com', 'password')]
-    watersheds = [('Aberjona River (MA)', '01102500', 'USC00196783'),]
-                  # ('West Branch Westfield River (MA)', '01181000', 'USC00199972'),
-                  # ('Little Androscoggin River (ME)', '01057000', 'USC00170844'),
-                  # ('Independence River (NY)', '04256000', 'USC00308248')]
+    watersheds = [('Aberjona River (MA)', '01102500', 'USC00196783'),
+                  ('West Branch Westfield River (MA)', '01181000', 'USC00199972'),
+                  ('Little Androscoggin River (ME)', '01057000', 'USC00170844'),
+                  ('Independence River (NY)', '04256000', 'USC00308248')]
 
     db.drop_all()
     db.create_all()

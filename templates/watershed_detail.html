@@ -2,21 +2,412 @@
 {% block title %}Watershed{% endblock %}
 {% block content %}
 {% if watershed %}
-<h1>{{ watershed.name }}</h1>
-<ul class="list-unstyled">
-    <li><b>USGS:</b> <a href="{{ url_for('usgs_dataset_detail', id=watershed.usgs.id) }}">{{ watershed.usgs.name }} ({{ watershed.usgs.station_id }})</a></li>
-    <li><b>GHCND:</b> <a href="{{ url_for('ghcnd_dataset_detail', id=watershed.ghcnd.id) }}">{{ watershed.ghcnd.name }} ({{ watershed.ghcnd.station_id }})</a></li>
-    <li><b>Latitude:</b> {{ watershed.latitude }}</li>
-    <li><b>Timespan:</b> {{ watershed.start_date.date() }} - {{ watershed.end_date.date() }}</li>
-    <li><b>Datasets</b>
-        <ul>
-            <li><a href="{{ url_for('watershed_dataset_json', id=watershed.id) }}">JSON</a></li>
-            <li><a href="{{ url_for('watershed_dataset_csv', id=watershed.id) }}">CSV</a></li>
+<div class="row">
+    <div class="col-xs-12">
+        <h1>{{ watershed.name }}</h1>
+    </div>
+</div>
+<div class="row">
+    <div class="col-xs-4">
+        <ul class="list-unstyled">
+            <li><b>USGS:</b> <a href="{{ url_for('usgs_dataset_detail', id=watershed.usgs.id) }}">{{ watershed.usgs.name }} ({{ watershed.usgs.station_id }})</a></li>
+            <li><b>GHCND:</b> <a href="{{ url_for('ghcnd_dataset_detail', id=watershed.ghcnd.id) }}">{{ watershed.ghcnd.name }} ({{ watershed.ghcnd.station_id }})</a></li>
+            <li><b>Latitude:</b> {{ watershed.latitude }}</li>
+            <li><b>Timespan:</b> {{ watershed.start_date.date() }} - {{ watershed.end_date.date() }}</li>
+            <li><b>Datasets</b>
+                <ul>
+                    <li><a href="{{ url_for('watershed_dataset_json', id=watershed.id) }}">JSON</a></li>
+                    <li><a href="{{ url_for('watershed_dataset_csv', id=watershed.id) }}">CSV</a></li>
+                </ul>
+            </li>
         </ul>
-    </li>
-</ul>
-<a class="btn btn-primary" href="{{ url_for('watershed_update', id=watershed.id) }}">Update</a>
+        <a class="btn btn-primary" href="{{ url_for('watershed_update', id=watershed.id) }}">Update</a>
+    </div>
+    <div class="col-xs-8">
+        <div class="charts">
+            <div id="chart-flow">                
+            </div>
+            <div id="chart-precip">                
+            </div>
+            <div id="chart-tmax">                
+            </div>
+            <div id="chart-tmin">                
+            </div>
+        </div>
+    </div>
+</div>
 {% else %}
 <h1>Not found</h1>
 {% endif %}    
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('static', filename='js/libs/d3.v3.js') }}"></script>
+<script>
+$(function() {
+    var dateFormat = d3.time.format('%Y-%m-%d');
+    d3.json("{{ url_for('usgs_dataset_dataset_json', id=watershed.usgs.id) }}")
+        .get(function(error, data) {
+            ['Flow_cfs'].forEach(function(variable) {
+                data[variable].processed.forEach(function(d) {
+                    d.Date = dateFormat.parse(d.Date);
+                });
+                data[variable].update.forEach(function(d) {
+                    d.Date = dateFormat.parse(d.Date);
+                });
+                data[variable].fill.forEach(function(d) {
+                    d.Date = dateFormat.parse(d.Date);
+                });
+            })
+
+            addChart('#chart-flow', 'Streamflow (cfs)', 'Flow_cfs', true, data.Flow_cfs);
+        });
+    d3.json("{{ url_for('ghcnd_dataset_dataset_json', id=watershed.ghcnd.id) }}")
+        .get(function(error, data) {
+            ['Precip_in', 'Tmin_degC', 'Tmax_degC'].forEach(function(variable) {
+                data[variable].processed.forEach(function(d) {
+                    d.Date = dateFormat.parse(d.Date);
+                });
+                data[variable].update.forEach(function(d) {
+                    d.Date = dateFormat.parse(d.Date);
+                });
+                data[variable].fill.forEach(function(d) {
+                    d.Date = dateFormat.parse(d.Date);
+                });
+            })
+            
+            addChart('#chart-precip', 'Precipitation (in/day)', 'Precip_in', true, data.Precip_in);
+            addChart('#chart-tmax', 'Max Air Temperature (degC)','Tmax_degC', false, data.Tmax_degC);
+            addChart('#chart-tmin', 'Min Air Temperature (degC)','Tmin_degC', false, data.Tmin_degC);
+        });
+    function addChart(selector, title, variable, yZero, data) {
+        var chart = new DatasetChart()
+            .width(700)
+            .height(200)
+            .x(function(d) { return d.Date; })
+            .y(function(d) { return d[variable]; })
+            .yZero(yZero)
+            .xDomain([dateFormat.parse("{{ watershed.start_date.date() }}"), dateFormat.parse("{{ watershed.end_date.date() }}")])
+            .title(title);
+        d3.select(selector).call(chart.data(data));
+    }
+
+    var DatasetChart = function() {
+        var svg,
+            id = 0,
+            margin = {top: 20, right: 20, bottom: 30, left: 50},
+            width = 960,
+            height = 500,
+            xScale = d3.time.scale(),
+            yScale = d3.scale.linear(),
+            xAxis = d3.svg.axis().scale(xScale).orient("bottom"),
+            yAxis = d3.svg.axis().ticks(5, "f").scale(yScale).orient("left"),
+            xValue = function(d) { return d.Date; },
+            yValue = function(d) { return d[1]; },
+            color = d3.scale.ordinal().domain(['processed', 'fill', 'update']).range(['black', 'crimson', 'dodgerblue']),
+            yLabel = "",
+            line = d3.svg.line().x(X).y(Y),
+            data = [],
+            lines,
+            xExtent,
+            xDomain,
+            yZero = true,
+            yVariableLabels = {'processed': 'Processed', 'fill': 'Filled', 'update': 'Updated'},
+            legend = true,
+            title,
+            zoom;
+
+        var customTimeFormat = d3.time.format.multi([
+          [".%L", function(d) { return d.getMilliseconds(); }],
+          [":%S", function(d) { return d.getSeconds(); }],
+          ["%I:%M", function(d) { return d.getMinutes(); }],
+          ["%I %p", function(d) { return d.getHours(); }],
+          ["%b %d", function(d) { return d.getDay() && d.getDate() != 1; }],
+          ["%b %d", function(d) { return d.getDate() != 1; }],
+          ["%b", function(d) { return d.getMonth(); }],
+          ["%Y", function() { return true; }]
+        ]);
+
+        xAxis.tickFormat(customTimeFormat).ticks(5);
+
+        function chart(selection) {
+            selection.each(function() {
+
+                xScale
+                  .range([0, width - margin.left - margin.right])
+                  .domain(xDomain || xExtent);
+
+                yExtent = d3.extent(data.processed, yValue);
+                yMin = yZero ? 0 : yExtent[0];
+                yScale
+                  .range([height - margin.top - margin.bottom, 0])
+                  .domain([yMin, yExtent[1]]);
+  
+                zoom = d3.behavior.zoom().x(xScale).scaleExtent([1, 100]).on("zoom", draw);
+
+                if (!svg) {
+                  svg = d3.select(this).append('svg')
+                    .attr("width", width)
+                    .attr("height", height);
+                  
+                  if (legend) {
+                    var gLegend = svg.append('g').attr('class', 'legend')
+                      .attr("transform", "translate(" + margin.left + ",0)");
+
+                    // add all legend items
+                    var gLegendItems = gLegend.selectAll('.legend-item').data(['processed', 'update', 'fill']);
+
+                    gLegendItems.enter()
+                      .append('g')
+                      .attr('class', 'legend-item');
+
+                    gLegendItems.append('circle')
+                      .attr('r', 4)
+                      .attr('cx', 4)
+                      .attr('cy', 8)
+                      .attr('fill', function(d) { return color(d); });
+
+                    gLegendItems.append('text')
+                      .attr("y", "1em")
+                      .attr("x", 0)
+                      .attr("dy", 0)
+                      .attr("dx", 12)
+                      .style("text-anchor", "start")
+                      .text(function(d) { return yVariableLabels[d]; });
+
+                    // shift legend items by the width of their div
+                    var labelWidths = [];
+                    gLegendItems.each(function(d, i) { 
+                      labelWidths.push(d3.select(this)[0][0].getBBox().width);}
+                    );
+
+                    var labelOffsets = [0];
+                    for (var i = 1; i < (labelWidths.length); i++) {
+                      labelOffsets.push(labelOffsets[i-1] + labelWidths[i-1]);
+                    }
+
+                    gLegendItems.attr('transform', function(d, i) {
+                      if (i === 0) {
+                        return null;
+                      } else {
+                        return 'translate(' + (labelOffsets[i]+5*i) + ',0)';
+                      }
+                    });
+                  }
+
+                  if (title) {
+                    var gTitle = svg.append('g').attr('class', 'title')
+                      .attr("transform", "translate(" + (width-margin.right) + ",10)")
+                      .append('text')
+                      .style('text-anchor', 'end')
+                      .style('font-weight', 'bold')
+                      .text(title);
+                  }
+
+                  var gEnter = svg.append('g')
+                    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+                    
+                  gEnter.append('g').attr('class', 'x axis')
+                    .attr("transform", "translate(0," + yScale.range()[0] + ")");
+
+                  gEnter.append('g').attr('class', 'y axis')
+                    .append("text")
+                      .attr("y", 0)
+                      .attr("x", 5)
+                      .attr("dy", -5)
+                      .style("text-anchor", "start")
+                      .text(yLabel);
+
+                  gEnter.append('g').attr('class', 'lines')
+                    .attr("clip-path", "url(#clip-"+id+")");
+
+                  gEnter.append('g').attr('class', 'circles update')
+                    .attr("clip-path", "url(#clip-"+id+")");
+
+                  gEnter.append('g').attr('class', 'circles fill')
+                    .attr("clip-path", "url(#clip-"+id+")");
+                  
+
+                  var clip = svg.append("defs").append("clipPath")
+                    .attr("id", "clip-"+id)
+                    .append("rect")
+                    .attr("id", "clip-rect")
+                    .attr("x", "0")
+                    .attr("y", "0")
+                    .attr("width", width - margin.left - margin.right)
+                    .attr("height", height - margin.top - margin.bottom);
+
+                  svg.append("rect")
+                    .attr("transform", "translate(" + margin.left + "," + margin.top + ")")            
+                    .attr("width", width - margin.left - margin.right)
+                    .attr("height", height - margin.top - margin.bottom)
+                    .attr("class", "overlay")
+                    .call(zoom);
+                }
+
+                draw();
+            });
+        }
+
+        function draw() {
+          xMax = xDomain ? xDomain[1] : xExtent[1];
+
+          var distanceToEnd = xScale.range()[1] - xScale(xMax);
+
+          zoom.translate([d3.min([d3.max([zoom.translate()[0], distanceToEnd+zoom.translate()[0]]), 0]), 0]);
+          
+          svg.select('.x.axis')
+              .call(xAxis);
+
+          svg.select('.y.axis')
+              .call(yAxis);
+
+          lProcessed = svg.select('g.lines').selectAll('.line')
+                .data([data.processed]);
+                    
+          lProcessed.enter().append('path').attr('class', 'line');
+          
+          lProcessed.attr("d", line)
+            .style("stroke", function(d) { return color('processed'); });
+
+          lProcessed.exit().remove();
+
+          cFill = svg.select('g.circles.fill').selectAll('circle')
+                .data(data.fill);
+                    
+          cFill.enter().append('circle');
+
+          cFill.attr("r", 3)
+            .attr("cx", X)
+            .attr("cy", Y)
+            .style("fill", function(d) { return color('fill'); });
+
+          cFill.exit().remove();
+
+          cUpdate = svg.select('g.circles.update').selectAll('circle')
+                .data(data.update);
+                    
+          cUpdate.enter().append('circle');
+          
+          cUpdate.attr("r", 3)
+            .attr("cx", X)
+            .attr("cy", Y)
+            .style("fill", function(d) { return color('update'); });
+
+          cUpdate.exit().remove();
+        }
+
+        function X(d) {
+          return xScale(xValue(d));
+        }
+
+        function Y(d) {
+          return yScale(yValue(d));
+        }
+
+        chart.zoomX = function(translate, scale) {
+          if (zoom) {
+            zoom.translate(translate);
+            zoom.scale(scale);
+            draw();
+          }
+        };
+
+        chart.id = function(_) {
+          if (!arguments.length) return id;
+          id = _;
+          return chart;
+        };
+
+        chart.width = function(_) {
+          if (!arguments.length) return width;
+          width = _;
+          return chart;
+        };
+
+        chart.height = function(_) {
+          if (!arguments.length) return height;
+          height = _;
+          return chart;
+        };
+
+        chart.x = function(_) {
+          if (!arguments.length) return xValue;
+          xValue = _;
+          return chart;
+        };
+
+        chart.y = function(_) {
+          if (!arguments.length) return yValue;
+          yValue = _;
+          return chart;
+        };
+
+        chart.yLabel = function(_) {
+          if (!arguments.length) return yLabel;
+          yLabel = _;
+          return chart;
+        };
+
+        chart.data = function(_) {
+          if (!arguments.length) return data;
+          data = _;
+          xExtent = d3.extent(data.processed, xValue);
+          return chart;
+        };
+
+        chart.legend = function(_) {
+          if (!arguments.length) return legend;
+          legend = _;
+          return chart;
+        };
+
+        chart.yDomain = function(_) {
+          if (!arguments.length) return yDomain;
+          yDomain = _;
+          return chart;
+        };
+
+        chart.xDomain = function(_) {
+          if (!arguments.length) return xDomain;
+          xDomain = _;
+          return chart;
+        };
+
+        chart.yScale = function(_) {
+          if (!arguments.length) return yScale;
+          yScale = _;
+          return chart;
+        };
+
+        chart.yAxis = function(_) {
+          if (!arguments.length) return yAxis;
+          yAxis = _;
+          return chart;
+        };
+
+        chart.color = function(_) {
+          if (!arguments.length) return color;
+          color = _;
+          return chart;
+        };
+
+        chart.title = function(_) {
+          if (!arguments.length) return title;
+          title = _;
+          return chart;
+        };
+
+        chart.yZero = function(_) {
+          if (!arguments.length) return yZero;
+          yZero = _;
+          return chart;
+        };
+
+        return chart;
+      };
+
+});
+</script>
 {% endblock %}
