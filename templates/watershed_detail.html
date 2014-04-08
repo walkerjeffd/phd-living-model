@@ -47,7 +47,7 @@
 <script>
 $(function() {
     var dateFormat = d3.time.format('%Y-%m-%d');
-    d3.json("{{ url_for('usgs_dataset_dataset_json', id=watershed.usgs.id) }}")
+    d3.json("{{ url_for('usgs_dataset_dataset_json', id=watershed.usgs.id) }}" + "?" + Math.floor(Math.random(1)*1000000))
         .get(function(error, data) {
             ['Flow_cfs'].forEach(function(variable) {
                 data[variable].processed.forEach(function(d) {
@@ -63,7 +63,7 @@ $(function() {
 
             addChart('#chart-flow', 'Streamflow (cfs)', 'Flow_cfs', true, data.Flow_cfs);
         });
-    d3.json("{{ url_for('ghcnd_dataset_dataset_json', id=watershed.ghcnd.id) }}")
+    d3.json("{{ url_for('ghcnd_dataset_dataset_json', id=watershed.ghcnd.id) }}" + "?" + Math.floor(Math.random(1)*1000000))
         .get(function(error, data) {
             ['Precip_in', 'Tmin_degC', 'Tmax_degC'].forEach(function(variable) {
                 data[variable].processed.forEach(function(d) {

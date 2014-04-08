@@ -1,1 +1,1 @@
-define(["underscore","backbone"],function(e,t){var n=t.Model.extend({initialize:function(){console.log("ModelModel: initialize")},url:function(){return"/api/model/"+this.get("id")},getInputURL:function(){var e="/datasets/watersheds/"+this.get("watershed").id+"/dataset.csv";return e}});return n});
+define(["underscore","backbone"],function(e,t){var n=t.Model.extend({initialize:function(){console.log("ModelModel: initialize")},url:function(){return"/api/model/"+this.get("id")}});return n});

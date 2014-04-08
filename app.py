@@ -90,14 +90,15 @@ class UsgsDataset(db.Model):
     def path_dataset_json(self):
         return os.path.join(self.path(), 'dataset.json')
 
-    def fetch_data(self):
+    def fetch_data(self, end_date=None):
         if app.config['DEBUG']:
             print 'Fetching USGS data, ' + self.station_id
 
         if not os.path.exists(self.path()):
             os.mkdir(self.path())
 
-        end_date =  datetime.now().date().isoformat()
+        if end_date is None:
+            end_date =  datetime.now().date().isoformat()
 
         url = 'http://waterservices.usgs.gov/nwis/dv/'
         params = {'format': 'json,1.1', 
@@ -424,7 +425,7 @@ class GhcndDataset(db.Model):
 
         return site
 
-    def load_raw_data(self):
+    def load_raw_data(self, end_date=None):
         if app.config['DEBUG']:
             print 'Getting GHCND raw data, ' + self.station_id
 
@@ -509,7 +510,10 @@ class GhcndDataset(db.Model):
         last_date = df.index[df.any(axis=1)].to_datetime().max()
         df = df[:last_date.isoformat()]
 
-        df = df[self.start_date.isoformat():]
+        if end_date is None:
+            df = df[self.start_date.isoformat():]
+        else:
+            df = df[self.start_date.isoformat():end_date]
 
         df['Date'] = [date.date().isoformat() for date in df.index.to_timestamp()]
 
@@ -543,14 +547,14 @@ class GhcndDataset(db.Model):
         
         return df
 
-    def update_data(self, fetch=True):
+    def update_data(self, fetch=True, end_date=None):
         if app.config['DEBUG']:
             print 'Updating GHCND data, ' + self.station_id
 
         if fetch is True:
             self.fetch_data()
 
-        raw_df = self.load_raw_data()
+        raw_df = self.load_raw_data(end_date=end_date)
         raw_df.to_csv(self.path_raw_csv(), index=False, cols=['Date', 'Precip_in', 'Tmin_degC', 'Tmax_degC'])
         self.count_missing = dataframe_count_missing(raw_df, columns=['Precip_in', 'Tmin_degC', 'Tmax_degC'])
 
@@ -952,4 +956,4 @@ if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'db':
         build_sample_db()
     else:
-        app.run(debug=True)
+        app.run(debug=True, port=5001)
