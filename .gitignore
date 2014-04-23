@@ -9,3 +9,4 @@ static/
 r.js
 
 settings.py
+passenger_wsgi.py
