@@ -3,8 +3,11 @@
 *.dmp
 *.sqlite
 
+makefile
+
 data/
 static/
+deploy/
 
 r.js
 
