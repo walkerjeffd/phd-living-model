@@ -3,17 +3,8 @@
 *.dmp
 *.sqlite
 
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.eot
-*.svg
-*.ttf
-*.woff
-
 data/
-static-build/*
+static/
 
 r.js
 

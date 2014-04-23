@@ -1,1 +1,0 @@
-define(["jquery","underscore","backbone","app/views/modellist"],function(e,t,n,r){var i=n.View.extend({template:t.template(""),initialize:function(){console.log("AppView: initialize"),this.render()},render:function(){this.$el.append(this.template())}});return i});

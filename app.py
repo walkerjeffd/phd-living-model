@@ -926,7 +926,11 @@ def create_watershed(name, usgs_station, ghcnd_station):
 
 def build_sample_db():
     print 'Building sample db'
-    users = [('walker.jeff.d@gmail.com', 'password')]
+
+    # create user from email and password included in settings.py
+    users = [(app.config['USER_EMAIL'], app.config['PASSWORD'])]
+
+    # bootstrap four example watersheds
     watersheds = [('Aberjona River (MA)', '01102500', 'USC00196783'),
                   ('West Branch Westfield River (MA)', '01181000', 'USC00199972'),
                   ('Little Androscoggin River (ME)', '01057000', 'USC00170844'),
@@ -953,4 +957,4 @@ if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'db':
         build_sample_db()
     else:
-        app.run(port=5001)
+        app.run()
