@@ -3,7 +3,7 @@ Living Model
 
 A demonstration of the Living Model concept where a client-side web application provides an interactive and visual modeling interface, and is coupled to a server-side web application designed to fetch, process, and manage input datasets retrieved using web services.
 
-This project is part of a PhD research by Jeffrey D. Walker, Tufts University. For more information about this research, see http://phd.walkerjeff.com
+This project is part of PhD research by Jeffrey D. Walker, Tufts University. For more information about this research, see http://phd.walkerjeff.com
 
 ## Code Overview
 
