@@ -16,10 +16,7 @@ from flask.ext.restless import APIManager
 
 app = Flask(__name__)
 
-app.config['DEBUG'] = True
-
-# configure sessions
-app.config['SECRET_KEY'] = 'A0Zr98j/3yX R~XHH!jmN]LWX/,?RT'
+app.config.from_object('settings')
 
 # configure data
 app.config['DATA_FOLDER'] = os.path.join(os.path.realpath(os.path.dirname(__file__)), 'data')
@@ -956,4 +953,4 @@ if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'db':
         build_sample_db()
     else:
-        app.run(debug=True, port=5001)
+        app.run(port=5001)

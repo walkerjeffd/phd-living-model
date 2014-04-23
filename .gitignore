@@ -16,3 +16,5 @@ data/
 static-build/*
 
 r.js
+
+settings.py
