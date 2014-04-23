@@ -20,6 +20,10 @@ app.config.from_object('settings')
 
 # configure data
 app.config['DATA_FOLDER'] = os.path.join(os.path.realpath(os.path.dirname(__file__)), 'data')
+if not os.path.exists(app.config['DATA_FOLDER']):
+    os.mkdir(app.config['DATA_FOLDER'])
+    os.mkdir(os.path.join(app.config['DATA_FOLDER'], 'usgs'))
+    os.mkdir(os.path.join(app.config['DATA_FOLDER'], 'ghcnd'))
 
 # configure SQLAlchemy
 app.config['DATABASE_FILE'] = 'sample_db.sqlite'
