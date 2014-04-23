@@ -1,1 +1,0 @@
-define(["jquery","bootstrap","app/router"],function(e,t,n){var r=function(){console.log("App initialized");var e=new n;Backbone.history.start({root:"/models"})};return{initialize:r}});
