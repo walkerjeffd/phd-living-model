@@ -14,7 +14,8 @@ from flask.ext.admin.contrib import sqla
 from flask.ext.admin.model import typefmt
 from flask.ext.restless import APIManager
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
+# app = Flask(__name__, static_folder='static-src') # use dev version of front-end code
 
 app.config.from_object('settings')
 
@@ -728,12 +729,18 @@ def usgs_dataset_detail(id):
 @app.route('/datasets/usgs/<int:id>/update/data')
 def usgs_dataset_update_data(id):
     usgs_dataset = UsgsDataset.query.get_or_404(id)
-    if usgs_dataset.update_data() is True:
-        flash('Update data successful')
-        return redirect(url_for('usgs_dataset_detail', id=id))
+
+    last_updated = usgs_dataset.updated.date()
+    today = datetime.today().date()
+
+    if last_updated >= today:
+        flash('USGS Dataset %d site already updated today' % id)
+    elif usgs_dataset.update_data() is True:
+        flash('Update data successful for USGS dataset %d' % id)
     else:
-        flash('Update data failed')
-        return redirect(url_for('usgs_dataset_detail', id=id))
+        flash('Update data failed for USGS dataset %d' % id)
+
+    return redirect(url_for('usgs_dataset_detail', id=id))
 
 @app.route('/datasets/usgs/<int:id>/update/site')
 def usgs_dataset_update_site(id):
@@ -774,23 +781,27 @@ def ghcnd_dataset_list():
 @app.route('/datasets/ghcnd/<int:id>/update/data')
 def ghcnd_dataset_update_data(id):
     ghcnd_dataset = GhcndDataset.query.get_or_404(id)
-    if ghcnd_dataset.update_data() is True:
-        flash('Update data successful')
-        return redirect(url_for('ghcnd_dataset_detail', id=id))
+
+    last_updated = ghcnd_dataset.updated.date()
+    today = datetime.today().date()
+
+    if last_updated >= today:
+        flash('GHCND Dataset %d site already updated today' % id)
+    elif ghcnd_dataset.update_data() is True:
+        flash('Update data successful for GHCND dataset %d' % id)
     else:
-        flash('Update data failed')
-        return redirect(url_for('ghcnd_dataset_detail', id=id))
+        flash('Update data failed for GHCND dataset %d' % id)
+
+    return redirect(url_for('ghcnd_dataset_detail', id=id))
 
 @app.route('/datasets/ghcnd/<int:id>/update/site')
 def ghcnd_dataset_update_site(id):
     ghcnd_dataset = GhcndDataset.query.get_or_404(id)
 
     if ghcnd_dataset.update_site() is True:
-        flash('Update site successful')
-        return redirect(url_for('ghcnd_dataset_detail', id=id))
+        flash('Update site successful for GHCND dataset %d' % id)
     else:
-        flash('Update site failed')
-        return redirect(url_for('ghcnd_dataset_detail', id=id))
+        flash('Update site failed for GHCND dataset %d' % id)
 
     return redirect(url_for('ghcnd_dataset_detail', id=id))
 

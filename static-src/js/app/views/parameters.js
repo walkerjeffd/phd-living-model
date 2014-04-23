@@ -13,13 +13,13 @@ define([
       console.log('ParametersView: initialize');
       this.render();
       var view = this;
-      
-      this.$(".slider").change(function() {
+
+      this.$(".slider").on('input change', function() {
         view.$("#"+this.name).text(this.value);
         view.model.set(this.name, +this.value);
         view.model.trigger('changeParam');
       });
-      
+
       this.listenTo(this.model, 'sync', this.updateSliders);
     },
 
