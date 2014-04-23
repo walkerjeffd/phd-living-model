@@ -82,11 +82,11 @@ pip install -r requirements.txt
 JavaScript Dependencies
 -----------------------
 
-Require.js is used to optimize (i.e. uglify, minimify, concat) the client-side source code. The optimization configuration is defined in the '/static-src/js/app.build.js' file (read more (here)[http://requirejs.org/docs/optimization.html]).
+Require.js is used to optimize (i.e. uglify, minimify, concat) the client-side source code. The optimization configuration is defined in the '/static-src/js/app.build.js' file (read more [here](http://requirejs.org/docs/optimization.html)).
 
 Node must be installed, see the instructions here: http://nodejs.org/
 
-Download the require.js optimization file (r.js)[http://requirejs.org/docs/download.html#rjs] and save it to the root of this directory
+Download the require.js optimization file [r.js](http://requirejs.org/docs/download.html#rjs) and save it to the root of this directory
 
 Flask Settings File
 -------------------
@@ -99,7 +99,7 @@ cp settings_default.py settings.py
 
 Open the settings.py file in a text editor and set:
 
-- `SECRET_KEY`, see the (Flask Quick Start)[http://flask.pocoo.org/docs/quickstart/#sessions] for info on generating a randomized secret key
+- `SECRET_KEY`, see the [Flask Quick Start](http://flask.pocoo.org/docs/quickstart/#sessions) for info on generating a randomized secret key
 - `USER_EMAIL`, your email address
 - `USER_PASSWORD`, a password
 
