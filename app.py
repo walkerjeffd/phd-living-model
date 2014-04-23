@@ -101,10 +101,10 @@ class UsgsDataset(db.Model):
             end_date =  datetime.now().date().isoformat()
 
         url = 'http://waterservices.usgs.gov/nwis/dv/'
-        params = {'format': 'json,1.1', 
-                  'parameterCd': '00060', 
-                  'startDT': self.start_date.date().isoformat(), 
-                  'endDT': end_date, 
+        params = {'format': 'json,1.1',
+                  'parameterCd': '00060',
+                  'startDT': self.start_date.date().isoformat(),
+                  'endDT': end_date,
                   'sites': self.station_id}
 
         r = requests.get(url, params=params)
@@ -129,7 +129,7 @@ class UsgsDataset(db.Model):
         with open(self.path_raw_json(), 'r') as f:
             data = json.load(f)
 
-        # get timeseries data        
+        # get timeseries data
         ts = data['value']['timeSeries'][0]
         nodatavalue = ts['variable']['noDataValue']
 
@@ -279,7 +279,7 @@ class UsgsDataset(db.Model):
             print 'Updating USGS site, ' + self.station_id
 
         site_info = self.load_site()
-        
+
         if site_info is None:
             print 'Could not load site info'
             return False
@@ -329,7 +329,7 @@ class GhcndDataset(db.Model):
     count_missing = db.Column(db.Integer)
     created = db.Column(db.DateTime, default=db.func.now())
     updated = db.Column(db.DateTime)
-    
+
     def path(self):
         return os.path.join(app.config['DATA_FOLDER'], 'ghcnd', self.station_id)
 
@@ -366,12 +366,12 @@ class GhcndDataset(db.Model):
         ftp.cwd('/pub/data/ghcn/daily/all')
 
         filename = self.station_id + ".dly"
-        
+
         ftp.retrbinary('RETR ' + filename, open(self.path_raw_data(), 'wb').write)
-        
+
         self.updated = datetime.utcnow()
         db.session.commit()
-        
+
         return True
 
     def fetch_site_list(self):
@@ -386,10 +386,10 @@ class GhcndDataset(db.Model):
         ftp.cwd('/pub/data/ghcn/daily')
 
         filename = "ghcnd-stations.txt"
-        
+
         ftp.retrbinary('RETR ' + filename, open(self.path_site_list_txt(), 'wb').write)
 
-        return True        
+        return True
 
     def parse_site_list(self):
         if app.config['DEBUG']:
@@ -506,7 +506,7 @@ class GhcndDataset(db.Model):
         }
         df = df.rename(columns=rename_columns)
         df.index = df.index.rename('Date')
-        
+
         last_date = df.index[df.any(axis=1)].to_datetime().max()
         df = df[:last_date.isoformat()]
 
@@ -541,10 +541,10 @@ class GhcndDataset(db.Model):
 
         # fill missing values
         df['Precip_in'] = df['Precip_in'].fillna(value=0)
-        
+
         for element in ['Tmin_degC', 'Tmax_degC']:
             df[element] = pd.Series.interpolate(df[element])
-        
+
         return df
 
     def update_data(self, fetch=True, end_date=None):
@@ -602,7 +602,7 @@ class GhcndDataset(db.Model):
             print 'Updating GHCND site, ' + self.station_id
 
         site = self.load_site()
-        
+
         self.latitude = float(site['LATITUDE'][0])
         self.longitude = float(site['LONGITUDE'][0])
         self.name = site['NAME'][0]
@@ -627,7 +627,7 @@ class Watershed(db.Model):
 
     def path(self):
         return os.path.join(app.config['DATA_FOLDER'], 'watershed', str(self.id))
-    
+
     def path_dataset_json(self):
         return os.path.join(self.path(), 'dataset.json')
 
@@ -658,7 +658,7 @@ class Watershed(db.Model):
         self.usgs.update_data(fetch=fetch)
         self.ghcnd.update_data(fetch=fetch)
         self.end_date = min(self.usgs.end_date, self.ghcnd.end_date)
-        
+
         db.session.commit()
 
         df = self.merge_dataset()
@@ -783,7 +783,7 @@ def ghcnd_dataset_update_data(id):
 @app.route('/datasets/ghcnd/<int:id>/update/site')
 def ghcnd_dataset_update_site(id):
     ghcnd_dataset = GhcndDataset.query.get_or_404(id)
-    
+
     if ghcnd_dataset.update_site() is True:
         flash('Update site successful')
         return redirect(url_for('ghcnd_dataset_detail', id=id))
@@ -853,7 +853,7 @@ FORMATTERS.update({
 
 class USGSAdminView(sqla.ModelView):
     form_create_rules = ('station_id', 'start_date')
-    
+
     column_type_formatters = FORMATTERS
 
     def after_model_change(self, form, model, is_created):
@@ -875,7 +875,7 @@ class WatershedAdminView(sqla.ModelView):
     form_create_rules = ('name', 'start_date', 'usgs', 'ghcnd')
 
     column_list = ('name', 'start_date', 'end_date', 'latitude', 'usgs', 'ghcnd')
-    
+
     column_type_formatters = FORMATTERS
 
     def after_model_change(self, form, model, is_created):
@@ -888,7 +888,7 @@ class WatershedAdminView(sqla.ModelView):
 
 class ModelAdminView(sqla.ModelView):
     form_create_rules = ('name', 'watershed')
-    
+
     column_type_formatters = FORMATTERS
 
 
@@ -948,7 +948,7 @@ def build_sample_db():
 
         model = Model(name=name, watershed=watershed)
         db.session.add(model)
-    
+
     db.session.commit()
     return
 
