@@ -5,6 +5,7 @@ import json
 import pandas as pd
 import numpy as np
 import StringIO
+import settings
 from ftplib import FTP
 from datetime import datetime
 from flask import Flask, render_template, redirect, url_for, flash, send_file
@@ -17,7 +18,7 @@ from flask.ext.restless import APIManager
 app = Flask(__name__, static_folder='static')
 # app = Flask(__name__, static_folder='static-src') # use dev version of front-end code
 
-app.config.from_object('settings')
+app.config.from_object(settings)
 
 # configure data
 app.config['DATA_FOLDER'] = os.path.join(os.path.realpath(os.path.dirname(__file__)), 'data')
@@ -25,6 +26,7 @@ if not os.path.exists(app.config['DATA_FOLDER']):
     os.mkdir(app.config['DATA_FOLDER'])
     os.mkdir(os.path.join(app.config['DATA_FOLDER'], 'usgs'))
     os.mkdir(os.path.join(app.config['DATA_FOLDER'], 'ghcnd'))
+    os.mkdir(os.path.join(app.config['DATA_FOLDER'], 'watershed'))
 
 # configure SQLAlchemy
 app.config['DATABASE_FILE'] = 'sample_db.sqlite'
@@ -943,7 +945,7 @@ def build_sample_db():
     print 'Building sample db'
 
     # create user from email and password included in settings.py
-    users = [(app.config['USER_EMAIL'], app.config['PASSWORD'])]
+    users = [(app.config['USER_EMAIL'], app.config['USER_PASSWORD'])]
 
     # bootstrap four example watersheds
     watersheds = [('Aberjona River (MA)', '01102500', 'USC00196783'),
