@@ -86,7 +86,7 @@ Require.js is used to optimize (i.e. uglify, minimify, concat) the client-side s
 
 Node must be installed, see the instructions here: http://nodejs.org/
 
-Download the require.js optimization file ((r.js)[http://requirejs.org/docs/download.html#rjs]) and save it to the root of this directory
+Download the require.js optimization file (r.js)[http://requirejs.org/docs/download.html#rjs] and save it to the root of this directory
 
 Flask Settings File
 -------------------
