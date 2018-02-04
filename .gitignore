@@ -10,7 +10,5 @@ static/
 deploy/
 env/
 
-r.js
-
 settings.py
 passenger_wsgi.py
