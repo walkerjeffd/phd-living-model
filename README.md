@@ -35,7 +35,7 @@ virtualenv env
 Activate virtualenv
 
 ```shell
-source enc/bin/activate  # other
+source env/bin/activate  # other
 env/Scripts/activate.bat # windows
 ```
 
