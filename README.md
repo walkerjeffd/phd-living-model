@@ -113,7 +113,7 @@ The Flask application expects all front-end code to be located in the `static/` 
 To biuld the `/static` folder (assuming node.js is installed and the r.js file is located in the root directory), run this command:
 
 ```shell
-node r.js -o ../../static-src/js/app.build.js
+node r.js -o static-src/js/app.build.js
 ```
 
 This will run in the require.js optimizer and place the built client-side code in the `static/` folder, which is used by the flask application.
